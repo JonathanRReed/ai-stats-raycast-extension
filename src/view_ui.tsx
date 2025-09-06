@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocalStorage } from "@raycast/utils";
 import { sb } from "./lib/supabase";
 import type { Model } from "./lib/types";
+import { useNavigation } from "@raycast/api";
 
 // Model type imported from ./lib/types
 
@@ -18,6 +19,28 @@ const METRICS = [
   { key: "price_1m_output_tokens", label: "Price per 1M Output Tokens (asc)" },
   { key: "price_1m_blended_3_to_1", label: "Blended Price (3:1) (asc)" }
 ] as const;
+
+function timeAgo(iso: string | null | undefined) {
+  if (!iso) return "-";
+  try {
+    const then = new Date(iso).getTime();
+    const now = Date.now();
+    const diff = Math.max(0, now - then);
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months}mo ago`;
+    const years = Math.floor(months / 12);
+    return `${years}y ago`;
+  } catch {
+    return "-";
+  }
+}
 
 type MetricKey = typeof METRICS[number]["key"];
 
@@ -35,6 +58,32 @@ export default function View() {
     "ai-stats-creator",
     ""
   );
+  const { value: pinnedId, setValue: setPinnedId } = useLocalStorage<string | null>("ai-stats-pinned-id", null);
+  const { push } = useNavigation();
+
+  // Auto-open pinned model on launch (if any)
+  useEffect(() => {
+    (async () => {
+      if (!pinnedId) return;
+      try {
+        const selectColumns = `
+          id,name,slug,creator_name,creator_slug,
+          aa_intelligence_index,aa_coding_index,aa_math_index,
+          mmlu_pro,gpqa,livecodebench,scicode,math_500,aime,hle,
+          median_output_tokens_per_second,median_time_to_first_token_seconds,
+          price_1m_input_tokens,price_1m_output_tokens,price_1m_blended_3_to_1,
+          pricing,evaluations,first_seen,last_seen
+        `.replace(/\s+/g, " ");
+        const client = sb();
+        const { data, error } = await client.from("aa_models").select(selectColumns).eq("id", pinnedId).single();
+        if (!error && data) {
+          push(<ModelDetail model={(data as unknown) as Model} setPinnedId={setPinnedId} pinnedId={pinnedId} />);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, []);
 
   return (
     <List
@@ -61,7 +110,14 @@ export default function View() {
       }
     >
       {mode === "search" ? (
-        <SearchSection setMode={setMode} setMetric={setMetric} searchText={searchText} creatorFilter={creatorFilter} />
+        <SearchSection
+          setMode={setMode}
+          setMetric={setMetric}
+          searchText={searchText}
+          creatorFilter={creatorFilter}
+          pinnedId={pinnedId ?? null}
+          setPinnedId={setPinnedId}
+        />
       ) : (
         <LeaderboardSection metric={metric} setMode={setMode} setMetric={setMetric} />
       )}
@@ -74,11 +130,15 @@ function SearchSection({
   setMetric,
   searchText,
   creatorFilter,
+  pinnedId,
+  setPinnedId,
 }: {
   setMode: (m: Mode) => void;
   setMetric: (m: MetricKey) => void;
   searchText: string;
   creatorFilter: string;
+  pinnedId: string | null;
+  setPinnedId: (id: string | null) => void | Promise<void>;
 }) {
   const [q, setQ] = useState("");
   const [isLoading, setLoading] = useState(false);
@@ -149,9 +209,15 @@ function SearchSection({
       <List.Section title="Models" subtitle={q}>
       {rows.map((m) => {
         const accessories: List.Item.Accessory[] = [];
+        const isPinned = pinnedId === m.id;
+        if (isPinned) accessories.push({ tag: { value: "Pinned", color: Color.Yellow } });
         if (m.slug) accessories.push({ text: m.slug });
         if (m.price_1m_blended_3_to_1 != null)
           accessories.push({ tag: { value: `${formatPrice(m.price_1m_blended_3_to_1)}/1M`, color: Color.Orange } });
+        if (m.price_1m_input_tokens != null)
+          accessories.push({ tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange } });
+        if (m.price_1m_output_tokens != null)
+          accessories.push({ tag: { value: `${formatPrice(m.price_1m_output_tokens)}/1M out`, color: Color.Orange } });
         if (m.median_output_tokens_per_second != null)
           accessories.push({ tag: { value: `${m.median_output_tokens_per_second} tps`, color: Color.Red } });
         return (
@@ -162,18 +228,24 @@ function SearchSection({
           accessories={accessories}
           actions={
             <ActionPanel>
-              <Action.Push title="Open Details" icon={Icon.Sidebar} target={<ModelDetail model={m} />} />
-              <Action.CopyToClipboard title="Copy Name" content={m.name ?? ""} />
-              <Action.CopyToClipboard title="Copy Slug" content={m.slug ?? ""} />
-              <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load(q)} />
+              <Action.Push title="Open Details" icon={Icon.Sidebar} target={<ModelDetail model={m} setPinnedId={setPinnedId} pinnedId={pinnedId} />} />
+              <Action title="Switch to Leaderboards" icon={Icon.List} onAction={() => setMode("leaderboards")} />
               <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
-                <Action title="Go to Leaderboards" onAction={() => setMode("leaderboards")} />
-                <ActionPanel.Section title="Leaderboard Metric">
+                <Action title="Switch to Leaderboards" onAction={() => setMode("leaderboards")} />
+                <ActionPanel.Section title="Pick Leaderboard Metric">
                   {METRICS.map((opt) => (
                     <Action key={opt.key} title={opt.label} onAction={() => setMetric(opt.key as MetricKey)} />
                   ))}
                 </ActionPanel.Section>
               </ActionPanel.Submenu>
+              {isPinned ? (
+                <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => setPinnedId(null)} />
+              ) : (
+                <Action title="Pin Model" icon={Icon.Pin} onAction={() => setPinnedId(m.id)} />
+              )}
+              <Action.CopyToClipboard title="Copy Name" content={m.name ?? ""} />
+              <Action.CopyToClipboard title="Copy Slug" content={m.slug ?? ""} />
+              <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load(q)} />
             </ActionPanel>
           }
         />
@@ -241,15 +313,16 @@ function LeaderboardSection({
             accessories={accessories}
             actions={
               <ActionPanel>
-                <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load()} />
                 <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
-                  <Action title="Go to Search" onAction={() => setMode("search")} />
-                  <ActionPanel.Section title="Leaderboard Metric">
+                  <Action title="Switch to Search" onAction={() => setMode("search")} />
+                  <ActionPanel.Section title="Pick Leaderboard Metric">
                     {METRICS.map((opt) => (
                       <Action key={opt.key} title={opt.label} onAction={() => setMetric(opt.key as MetricKey)} />
                     ))}
                   </ActionPanel.Section>
                 </ActionPanel.Submenu>
+                <Action title="Switch to Search" icon={Icon.MagnifyingGlass} onAction={() => setMode("search")} />
+                <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load()} />
               </ActionPanel>
             }
           />
@@ -303,31 +376,69 @@ function CreatorFilterDropdown({
 }
 
 function modelMarkdown(model: Model) {
-  const pricing = fencedJson(model.pricing ?? {});
-  const evals = fencedJson(model.evaluations ?? {});
-  return `# ${model.name ?? model.slug ?? "Model"}
-**Slug:** ${model.slug ?? "-"}  
-**Creator:** ${model.creator_name ?? "-"} (${model.creator_slug ?? "-"})  
-**Seen:** first ${model.first_seen ?? "-"} • last ${model.last_seen ?? "-"}
+  const priceInput = model.price_1m_input_tokens != null ? formatPrice(model.price_1m_input_tokens) : "-";
+  const priceOutput = model.price_1m_output_tokens != null ? formatPrice(model.price_1m_output_tokens) : "-";
+  const priceBlended = model.price_1m_blended_3_to_1 != null ? formatPrice(model.price_1m_blended_3_to_1) : "-";
+  const tps = model.median_output_tokens_per_second ?? "-";
+  const ttft = model.median_time_to_first_token_seconds ?? "-";
+  const updatedAgo = timeAgo(model.last_seen);
 
-## Benchmarks
-- MMLU Pro: ${model.mmlu_pro ?? "-"}
-- GPQA: ${model.gpqa ?? "-"}
-- LiveCodeBench: ${model.livecodebench ?? "-"}
-- SciCode: ${model.scicode ?? "-"}
-- Math 500: ${model.math_500 ?? "-"}
-- AIME: ${model.aime ?? "-"}
-- HLE: ${model.hle ?? "-"}
+  const overview = `
+| Field | Value |
+|------:|:------|
+| Name | ${model.name ?? model.slug ?? "-"} |
+| Slug | ${model.slug ?? "-"} |
+| Creator | ${model.creator_name ?? "-"} (${model.creator_slug ?? "-"}) |
+| First Seen | ${model.first_seen ?? "-"} |
+| Last Seen | ${model.last_seen ?? "-"} (${updatedAgo}) |
+`;
+
+  const pricingTbl = `
+| Pricing | USD |
+|-------:|:----|
+| Input (1M) | ${priceInput} |
+| Output (1M) | ${priceOutput} |
+| Blended 3:1 (1M) | ${priceBlended} |
+`;
+
+  const benchmarks = `
+| Benchmark | Score |
+|---------:|:------|
+| Intelligence Index | ${model.aa_intelligence_index ?? "-"} |
+| Coding Index | ${model.aa_coding_index ?? "-"} |
+| Math Index | ${model.aa_math_index ?? "-"} |
+| MMLU Pro | ${model.mmlu_pro ?? "-"} |
+| GPQA | ${model.gpqa ?? "-"} |
+| LiveCodeBench | ${model.livecodebench ?? "-"} |
+| SciCode | ${model.scicode ?? "-"} |
+| Math 500 | ${model.math_500 ?? "-"} |
+| AIME | ${model.aime ?? "-"} |
+| HLE | ${model.hle ?? "-"} |
+`;
+
+  return `# ${model.name ?? model.slug ?? "Model"}
+
+## Overview
+${overview}
+
+## Pricing
+${pricingTbl}
 
 ## Throughput & Latency
-- Median TPS: ${model.median_output_tokens_per_second ?? "-"}
-- Median TTFT (s): ${model.median_time_to_first_token_seconds ?? "-"}
+| Metric | Value |
+|------:|:------|
+| Median Tokens/sec | ${tps} |
+| Median TTFT (s) | ${ttft} |
 
-## Pricing (JSON)
-${pricing}
+## Benchmarks
+${benchmarks}
 
-## Evaluations (JSON)
-${evals}
+## Raw Data
+### Pricing JSON
+${fencedJson(model.pricing ?? {})}
+
+### Evaluations JSON
+${fencedJson(model.evaluations ?? {})}
 `;
 }
 
@@ -335,9 +446,26 @@ function fencedJson(val: unknown) {
   return `\n\`\`\`json\n${JSON.stringify(val, null, 2)}\n\`\`\`\n`;
 }
 
-function ModelDetail({ model }: { model: Model }) {
+function ModelDetail({ model, setPinnedId, pinnedId }: { model: Model; setPinnedId?: (id: string | null) => void; pinnedId?: string | null }) {
   const md = modelMarkdown(model);
-  return <Detail markdown={md} />;
+  const isPinned = pinnedId && model.id === pinnedId;
+  return (
+    <Detail
+      markdown={md}
+      actions={
+        <ActionPanel>
+          {setPinnedId && (
+            isPinned ? (
+              <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => setPinnedId(null)} />
+            ) : (
+              <Action title="Pin Model" icon={Icon.Pin} onAction={() => setPinnedId(model.id)} />
+            )
+          )}
+          <Action.CopyToClipboard title="Copy Slug" content={model.slug ?? ""} />
+        </ActionPanel>
+      }
+    />
+  );
 }
 
 function formatPrice(n: number) {
