@@ -13,12 +13,12 @@ Search models, view benchmark results, compare prices, and check leaderboards �
 - 🚀 **Throughput** – Median tokens/sec and TTFT, with clear color cues.
 - 🏆 **Leaderboards** – Rank by MMLU, GPQA, TPS, TTFT, prices, and more.
 - 📄 **Model Detail Pages** – “About” pages with overview, pricing, throughput, benchmarks, and raw JSON.
-- 📌 **Pin a Model** – Pin a model and the extension auto-opens it on launch.
+- 📌 **Pin a Model** – Pin upto 10 models and have them in the top of the list when the extension launches.
 - ⌨️ **Quick Switcher (Cmd+K)** – Jump between search/leaderboards and pick leaderboard metrics instantly.
 
 ## Setup
 
-1. Install the extension in Raycast (Developer Mode if running locally).
+1. Install the extension in Raycast
 2. Run the command: `View`
    - Use the search list and Action menu (or Cmd+K) to switch to leaderboards.
 
@@ -31,7 +31,7 @@ Search models, view benchmark results, compare prices, and check leaderboards �
 ## Tech Stack
 
 - Raycast API – extension framework
-- Supabase – hosted database (read-only, RLS-enforced)
+- Supabase – hosted database (read-only)
 
 ## License
 

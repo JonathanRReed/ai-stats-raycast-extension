@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocalStorage } from "@raycast/utils";
 import { sb } from "./lib/supabase";
 import type { Model } from "./lib/types";
-import { useNavigation } from "@raycast/api";
 
 // Model type imported from ./lib/types
 
@@ -58,32 +57,22 @@ export default function View() {
     "ai-stats-creator",
     ""
   );
-  const { value: pinnedId, setValue: setPinnedId } = useLocalStorage<string | null>("ai-stats-pinned-id", null);
-  const { push } = useNavigation();
+  const { value: pinnedIds = [], setValue: setPinnedIds } = useLocalStorage<string[]>(
+    "ai-stats-pinned-ids",
+    []
+  );
 
-  // Auto-open pinned model on launch (if any)
-  useEffect(() => {
-    (async () => {
-      if (!pinnedId) return;
-      try {
-        const selectColumns = `
-          id,name,slug,creator_name,creator_slug,
-          aa_intelligence_index,aa_coding_index,aa_math_index,
-          mmlu_pro,gpqa,livecodebench,scicode,math_500,aime,hle,
-          median_output_tokens_per_second,median_time_to_first_token_seconds,
-          price_1m_input_tokens,price_1m_output_tokens,price_1m_blended_3_to_1,
-          pricing,evaluations,first_seen,last_seen
-        `.replace(/\s+/g, " ");
-        const client = sb();
-        const { data, error } = await client.from("aa_models").select(selectColumns).eq("id", pinnedId).single();
-        if (!error && data) {
-          push(<ModelDetail model={(data as unknown) as Model} setPinnedId={setPinnedId} pinnedId={pinnedId} />);
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    })();
-  }, []);
+  function addPin(id: string) {
+    const next = [id, ...pinnedIds.filter((x) => x !== id)].slice(0, 10);
+    return setPinnedIds(next);
+  }
+  function removePin(id: string) {
+    const next = pinnedIds.filter((x) => x !== id);
+    return setPinnedIds(next);
+  }
+  function clearAllPins() {
+    return setPinnedIds([]);
+  }
 
   return (
     <List
@@ -115,8 +104,10 @@ export default function View() {
           setMetric={setMetric}
           searchText={searchText}
           creatorFilter={creatorFilter}
-          pinnedId={pinnedId ?? null}
-          setPinnedId={setPinnedId}
+          pinnedIds={pinnedIds}
+          addPin={addPin}
+          removePin={removePin}
+          clearAllPins={clearAllPins}
         />
       ) : (
         <LeaderboardSection metric={metric} setMode={setMode} setMetric={setMetric} />
@@ -130,15 +121,19 @@ function SearchSection({
   setMetric,
   searchText,
   creatorFilter,
-  pinnedId,
-  setPinnedId,
+  pinnedIds,
+  addPin,
+  removePin,
+  clearAllPins,
 }: {
   setMode: (m: Mode) => void;
   setMetric: (m: MetricKey) => void;
   searchText: string;
   creatorFilter: string;
-  pinnedId: string | null;
-  setPinnedId: (id: string | null) => void | Promise<void>;
+  pinnedIds: string[];
+  addPin: (id: string) => void | Promise<void>;
+  removePin: (id: string) => void | Promise<void>;
+  clearAllPins: () => void | Promise<void>;
 }) {
   const [q, setQ] = useState("");
   const [isLoading, setLoading] = useState(false);
@@ -198,6 +193,9 @@ function SearchSection({
     debounce.current = setTimeout(() => void load(searchText), 250);
   }, [searchText, creatorFilter]);
 
+  const pinnedRows = rows.filter((r) => pinnedIds.includes(r.id));
+  const listRows = rows.filter((r) => !pinnedIds.includes(r.id));
+
   return (
     <>
       {isLoading && rows.length === 0 ? (
@@ -206,14 +204,62 @@ function SearchSection({
       {!isLoading && rows.length === 0 ? (
         <List.EmptyView title="No models found" description="Try another search term" />
       ) : null}
+      {pinnedRows.length > 0 && (
+        <List.Section title="Pinned">
+          {pinnedRows.map((m) => {
+            const accessories: List.Item.Accessory[] = [];
+            accessories.push({ tag: { value: "Pinned", color: Color.Yellow } });
+            if (m.slug) accessories.push({ text: m.slug });
+            if (m.price_1m_input_tokens != null)
+              accessories.push({ tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange } });
+            if (m.price_1m_output_tokens != null)
+              accessories.push({ tag: { value: `${formatPrice(m.price_1m_output_tokens)}/1M out`, color: Color.Orange } });
+            if (m.median_output_tokens_per_second != null)
+              accessories.push({ tag: { value: `${m.median_output_tokens_per_second} tps`, color: Color.Red } });
+            return (
+              <List.Item
+                key={`pinned-${m.id}`}
+                title={m.name ?? m.slug ?? "Unnamed"}
+                subtitle={m.creator_name ?? ""}
+                accessories={accessories}
+                actions={
+                  <ActionPanel>
+                    <Action.Push
+                      title="Open Details"
+                      icon={Icon.Sidebar}
+                      target={<ModelDetail model={m} pinnedIds={pinnedIds} addPin={addPin} removePin={removePin} />}
+                    />
+                    <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => removePin(m.id)} />
+                    <Action title="Switch to Leaderboards" icon={Icon.List} onAction={() => setMode("leaderboards")} />
+                    <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
+                      <Action title="Switch to Leaderboards" onAction={() => setMode("leaderboards")} />
+                      <ActionPanel.Section title="Pick Leaderboard Metric">
+                        {METRICS.map((opt) => (
+                          <Action key={opt.key} title={opt.label} onAction={() => setMetric(opt.key as MetricKey)} />
+                        ))}
+                      </ActionPanel.Section>
+                    </ActionPanel.Submenu>
+                    <ActionPanel.Submenu title="Pinned Models" shortcut={{ modifiers: ["cmd"], key: "p" }}>
+                      {pinnedRows.map((pm) => (
+                        <Action key={pm.id} title={pm.name ?? pm.slug ?? pm.id} onAction={() => setMode("search")} />
+                      ))}
+                      <Action title="Clear All Pins" onAction={() => clearAllPins()} />
+                    </ActionPanel.Submenu>
+                    <Action.CopyToClipboard title="Copy Name" content={m.name ?? ""} />
+                    <Action.CopyToClipboard title="Copy Slug" content={m.slug ?? ""} />
+                  </ActionPanel>
+                }
+              />
+            );
+          })}
+        </List.Section>
+      )}
       <List.Section title="Models" subtitle={q}>
-      {rows.map((m) => {
+      {listRows.map((m) => {
         const accessories: List.Item.Accessory[] = [];
-        const isPinned = pinnedId === m.id;
+        const isPinned = pinnedIds.includes(m.id);
         if (isPinned) accessories.push({ tag: { value: "Pinned", color: Color.Yellow } });
         if (m.slug) accessories.push({ text: m.slug });
-        if (m.price_1m_blended_3_to_1 != null)
-          accessories.push({ tag: { value: `${formatPrice(m.price_1m_blended_3_to_1)}/1M`, color: Color.Orange } });
         if (m.price_1m_input_tokens != null)
           accessories.push({ tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange } });
         if (m.price_1m_output_tokens != null)
@@ -228,7 +274,11 @@ function SearchSection({
           accessories={accessories}
           actions={
             <ActionPanel>
-              <Action.Push title="Open Details" icon={Icon.Sidebar} target={<ModelDetail model={m} setPinnedId={setPinnedId} pinnedId={pinnedId} />} />
+              <Action.Push
+                title="Open Details"
+                icon={Icon.Sidebar}
+                target={<ModelDetail model={m} pinnedIds={pinnedIds} addPin={addPin} removePin={removePin} />}
+              />
               <Action title="Switch to Leaderboards" icon={Icon.List} onAction={() => setMode("leaderboards")} />
               <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
                 <Action title="Switch to Leaderboards" onAction={() => setMode("leaderboards")} />
@@ -239,10 +289,16 @@ function SearchSection({
                 </ActionPanel.Section>
               </ActionPanel.Submenu>
               {isPinned ? (
-                <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => setPinnedId(null)} />
+                <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => removePin(m.id)} />
               ) : (
-                <Action title="Pin Model" icon={Icon.Pin} onAction={() => setPinnedId(m.id)} />
+                <Action title="Pin Model" icon={Icon.Pin} onAction={() => addPin(m.id)} />
               )}
+              <ActionPanel.Submenu title="Pinned Models" shortcut={{ modifiers: ["cmd"], key: "p" }}>
+                {pinnedRows.map((pm) => (
+                  <Action key={pm.id} title={pm.name ?? pm.slug ?? pm.id} onAction={() => setMode("search")} />
+                ))}
+                <Action title="Clear All Pins" onAction={() => clearAllPins()} />
+              </ActionPanel.Submenu>
               <Action.CopyToClipboard title="Copy Name" content={m.name ?? ""} />
               <Action.CopyToClipboard title="Copy Slug" content={m.slug ?? ""} />
               <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load(q)} />
@@ -446,19 +502,29 @@ function fencedJson(val: unknown) {
   return `\n\`\`\`json\n${JSON.stringify(val, null, 2)}\n\`\`\`\n`;
 }
 
-function ModelDetail({ model, setPinnedId, pinnedId }: { model: Model; setPinnedId?: (id: string | null) => void; pinnedId?: string | null }) {
+function ModelDetail({
+  model,
+  pinnedIds,
+  addPin,
+  removePin,
+}: {
+  model: Model;
+  pinnedIds?: string[];
+  addPin?: (id: string) => void | Promise<void>;
+  removePin?: (id: string) => void | Promise<void>;
+}) {
   const md = modelMarkdown(model);
-  const isPinned = pinnedId && model.id === pinnedId;
+  const isPinned = pinnedIds?.includes(model.id) ?? false;
   return (
     <Detail
       markdown={md}
       actions={
         <ActionPanel>
-          {setPinnedId && (
+          {addPin && removePin && (
             isPinned ? (
-              <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => setPinnedId(null)} />
+              <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => removePin(model.id)} />
             ) : (
-              <Action title="Pin Model" icon={Icon.Pin} onAction={() => setPinnedId(model.id)} />
+              <Action title="Pin Model" icon={Icon.Pin} onAction={() => addPin(model.id)} />
             )
           )}
           <Action.CopyToClipboard title="Copy Slug" content={model.slug ?? ""} />
