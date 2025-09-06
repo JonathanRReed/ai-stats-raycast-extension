@@ -8,9 +8,9 @@ Search models, view benchmark results, compare prices, and check leaderboards �
 
 ## Screenshots
 
-![AI Stats – Search](metadata/ai-stats-1.png)
+![AI Stats – Search](assets/ai-stats-1.png)
 
-![AI Stats – Details & Actions](metadata/ai-stats-2.png)
+![AI Stats – Details & Actions](assets/ai-stats-2.png)
 
 ## Usage
 
@@ -18,6 +18,26 @@ Search models, view benchmark results, compare prices, and check leaderboards �
 - Creator Filter: Cmd+P
 - Reset Filters: Cmd+Backspace
 - Pinned Models: Pin/Unpin from list or detail; Move Up/Down; optional Pinned section in preferences.
+
+## Commands
+
+- View AI Stats — single unified command for Search and Leaderboards.
+
+## Action Menu (Quick Reference)
+
+- Search
+  - Switch to Leaderboards
+  - Filter by Creator… (Cmd+P)
+  - Reset Filters (Cmd+Backspace)
+  - Pin / Unpin / Move Pin Up / Move Pin Down
+  - Open Details (Enter)
+  - Refresh
+
+- Leaderboards
+  - Open Details (Enter)
+  - Switch to Search
+  - Change Leaderboard… (Cmd+K)
+  - Refresh
 
 ## Features
 

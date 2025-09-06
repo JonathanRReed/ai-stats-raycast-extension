@@ -358,7 +358,11 @@ function SearchSection({
                       void load("");
                     }}
                   />
-                  <ActionPanel.Submenu title="Filter by Creator" icon={Icon.Person} shortcut={{ modifiers: ["cmd"], key: "p" }}>
+                  <ActionPanel.Submenu
+                    title="Filter by Creator"
+                    icon={Icon.Person}
+                    shortcut={{ modifiers: ["cmd"], key: "p" }}
+                  >
                     <Action title="All Creators" icon={Icon.Person} onAction={() => setCreatorFilter("")} />
                     {[...new Set(rows.map((r) => r.creator_name).filter(Boolean) as string[])].map((name) => (
                       <Action key={name} title={name} icon={Icon.Person} onAction={() => setCreatorFilter(name)} />
@@ -524,9 +528,7 @@ function buildModelMarkdown(model: Model) {
   const priceBlended = !isMissing(model.price_1m_blended_3_to_1)
     ? formatPrice(model.price_1m_blended_3_to_1 as number)
     : "N/A";
-  const tps = !isMissing(model.median_output_tokens_per_second)
-    ? String(model.median_output_tokens_per_second)
-    : "N/A";
+  const tps = !isMissing(model.median_output_tokens_per_second) ? String(model.median_output_tokens_per_second) : "N/A";
   const ttft = !isMissing(model.median_time_to_first_token_seconds)
     ? String(model.median_time_to_first_token_seconds)
     : "N/A";
