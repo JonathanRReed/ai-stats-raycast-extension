@@ -47,7 +47,7 @@ export default function View() {
   const { SHOW_PINNED_SECTION = true } = getPreferenceValues<{ SHOW_PINNED_SECTION?: boolean }>();
   const { value: mode = "search", setValue: setMode } = useLocalStorage<Mode>("ai-stats-mode", "search");
   const { value: metric = "mmlu_pro", setValue: setMetric } = useLocalStorage<MetricKey>("ai-stats-metric", "mmlu_pro");
-  const { value: searchText = "", setValue: setSearchText } = useLocalStorage<string>("ai-stats-search", "");
+  const [searchText, setSearchText] = useState<string>("");
   const { value: creatorFilter = "", setValue: setCreatorFilter } = useLocalStorage<string>("ai-stats-creator", "");
   const { value: pinnedIds = [], setValue: setPinnedIds } = useLocalStorage<string[]>("ai-stats-pinned-ids", []);
 
