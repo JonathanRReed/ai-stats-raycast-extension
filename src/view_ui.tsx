@@ -418,6 +418,8 @@ function LeaderboardSection({
     if (error) {
       console.error(error);
       setRows([]);
+      const message = typeof error.message === "string" ? error.message : JSON.stringify(error);
+      void showToast({ style: Toast.Style.Failure, title: "Failed to load leaderboard", message });
     } else {
       setRows((data ?? []) as unknown as Model[]);
     }
@@ -491,14 +493,20 @@ function CreatorFilterDropdown({ value, onChange }: { value: string; onChange: (
       try {
         setLoading(true);
         const client = sb();
-        // Fetch distinct creator names
+        // Fetch creator names; de-duplicate client-side (distinct option isn't typed in supabase-js)
         const { data, error } = await client
           .from("aa_models")
           .select("creator_name")
           .not("creator_name", "is", null)
           .order("creator_name", { ascending: true });
         if (error) throw error;
-        const names = Array.from(new Set(((data ?? []) as { creator_name: string }[]).map((d) => d.creator_name)));
+        const names = Array.from(
+          new Set(
+            ((data ?? []) as { creator_name: string | null }[])
+              .map((d) => d.creator_name)
+              .filter((v): v is string => Boolean(v)),
+          ),
+        );
         setCreators(names);
       } catch (e) {
         console.error(e);
