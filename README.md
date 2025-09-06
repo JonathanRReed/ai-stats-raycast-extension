@@ -9,17 +9,16 @@ Search models, view benchmark results, compare prices, and check leaderboards �
 ## Features
 
 - 🔍 **Search Models** – Find models by name, slug, or creator. Most recent models shown first.
-- 🏷️ **Price Badges** – Blended/input/output prices per 1M tokens at a glance.
+- 🏷️ **Price Badges** – input & output prices per 1M tokens at a glance.
 - 🚀 **Throughput** – Median tokens/sec and TTFT, with clear color cues.
 - 🏆 **Leaderboards** – Rank by MMLU, GPQA, TPS, TTFT, prices, and more.
 - 📄 **Model Detail Pages** – “About” pages with overview, pricing, throughput, benchmarks, and raw JSON.
 - 📌 **Pin a Model** – Pin upto 10 models and have them in the top of the list when the extension launches.
-- ⌨️ **Quick Switcher (Cmd+K)** – Jump between search/leaderboards and pick leaderboard metrics instantly.
 
 ## Setup
 
 1. Install the extension in Raycast
-2. Run the command: `View`
+2. Run the command: `View AI Stats`
    - Use the search list and Action menu (or Cmd+K) to switch to leaderboards.
 
 ## Data Source

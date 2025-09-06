@@ -81,6 +81,20 @@ export default function View() {
             <List.Dropdown.Item value="leaderboards" title="Leaderboards" />
           </List.Dropdown>
           {mode === "search" && <CreatorFilterDropdown value={creatorFilter} onChange={setCreatorFilter} />}
+          {mode === "search" && creatorFilter && (
+            <List.Dropdown
+              tooltip="Active Creator Filter"
+              value="set"
+              onChange={(v) => {
+                if (v === "clear") {
+                  void setCreatorFilter("");
+                }
+              }}
+            >
+              <List.Dropdown.Item value="set" title={`Creator: ${creatorFilter}`} />
+              <List.Dropdown.Item value="clear" title="Clear" />
+            </List.Dropdown>
+          )}
           {mode === "leaderboards" && (
             <List.Dropdown tooltip="Metric" onChange={(v) => setMetric(v as MetricKey)}>
               {METRICS.map((m) => (
@@ -94,8 +108,8 @@ export default function View() {
       {mode === "search" ? (
         <SearchSection
           setMode={setMode}
-          setMetric={setMetric}
           searchText={searchText}
+          setSearchText={setSearchText}
           creatorFilter={creatorFilter}
           setCreatorFilter={setCreatorFilter}
           pinnedIds={pinnedIds}
@@ -113,8 +127,8 @@ export default function View() {
 
 function SearchSection({
   setMode,
-  setMetric,
   searchText,
+  setSearchText,
   creatorFilter,
   setCreatorFilter,
   pinnedIds,
@@ -124,8 +138,8 @@ function SearchSection({
   showPinnedSection,
 }: {
   setMode: (m: Mode) => void;
-  setMetric: (m: MetricKey) => void;
   searchText: string;
+  setSearchText: (v: string) => void | Promise<void>;
   creatorFilter: string;
   setCreatorFilter: (v: string) => void | Promise<void>;
   pinnedIds: string[];
@@ -192,13 +206,38 @@ function SearchSection({
     debounce.current = setTimeout(() => void load(searchText), 250);
   }, [searchText, creatorFilter]);
 
-  const pinnedRows = rows.filter((r) => pinnedIds.includes(r.id));
+  const pinnedRows = rows
+    .filter((r) => pinnedIds.includes(r.id))
+    .sort((a, b) => pinnedIds.indexOf(a.id) - pinnedIds.indexOf(b.id));
   const listRows = rows.filter((r) => !pinnedIds.includes(r.id));
   const updatedLabel = rows.length > 0 && rows[0]?.last_seen ? `Updated ${timeAgo(rows[0].last_seen)}` : undefined;
 
   return (
     <>
       {isLoading && rows.length === 0 ? <List.EmptyView title="Loading…" /> : null}
+      {(creatorFilter || q) && (
+        <List.Section title="Filters">
+          <List.Item
+            title={`${creatorFilter ? `Creator: ${creatorFilter}` : ""}${creatorFilter && q ? " • " : ""}${q ? `Search: "${q}"` : ""}`}
+            icon={Icon.Filter}
+            actions={
+              <ActionPanel>
+                <Action
+                  title="Reset Filters"
+                  icon={Icon.XMarkCircle}
+                  shortcut={{ modifiers: ["cmd"], key: "backspace" }}
+                  onAction={async () => {
+                    await setCreatorFilter("");
+                    await setSearchText("");
+                    setQ("");
+                    void load("");
+                  }}
+                />
+              </ActionPanel>
+            }
+          />
+        </List.Section>
+      )}
       {!isLoading && rows.length === 0 ? (
         <List.EmptyView title="No models found" description="Try another search term" />
       ) : null}
@@ -207,8 +246,6 @@ function SearchSection({
           {pinnedRows.map((m) => {
             const accessories: List.Item.Accessory[] = [];
             accessories.push({ tag: { value: "Pinned", color: Color.Yellow } });
-            if (m.slug) accessories.push({ text: m.slug });
-            if (m.last_seen) accessories.push({ tag: { value: timeAgo(m.last_seen), color: Color.SecondaryText } });
             if (m.price_1m_input_tokens != null)
               accessories.push({
                 tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange },
@@ -236,14 +273,17 @@ function SearchSection({
                     <Action title="Move Pin up" icon={Icon.ArrowUp} onAction={() => movePin(m.id, -1)} />
                     <Action title="Move Pin Down" icon={Icon.ArrowDown} onAction={() => movePin(m.id, 1)} />
                     <Action title="Switch to Leaderboards" icon={Icon.List} onAction={() => setMode("leaderboards")} />
-                    <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
-                      <Action title="Switch to Leaderboards" onAction={() => setMode("leaderboards")} />
-                      <ActionPanel.Section title="Pick Leaderboard Metric">
-                        {METRICS.map((opt) => (
-                          <Action key={opt.key} title={opt.label} onAction={() => setMetric(opt.key as MetricKey)} />
-                        ))}
-                      </ActionPanel.Section>
-                    </ActionPanel.Submenu>
+                    <Action
+                      title="Reset Filters"
+                      icon={Icon.XMarkCircle}
+                      shortcut={{ modifiers: ["cmd"], key: "backspace" }}
+                      onAction={async () => {
+                        await setCreatorFilter("");
+                        await setSearchText("");
+                        setQ("");
+                        void load("");
+                      }}
+                    />
                     <ActionPanel.Submenu title="Filter by Creator" shortcut={{ modifiers: ["cmd"], key: "p" }}>
                       <Action title="All Creators" onAction={() => setCreatorFilter("")} />
                       {[...new Set(rows.map((r) => r.creator_name).filter(Boolean) as string[])].map((name) => (
@@ -264,7 +304,6 @@ function SearchSection({
           const accessories: List.Item.Accessory[] = [];
           const isPinned = pinnedIds.includes(m.id);
           if (isPinned) accessories.push({ tag: { value: "Pinned", color: Color.Yellow } });
-          if (m.slug) accessories.push({ text: m.slug });
           if (m.price_1m_input_tokens != null)
             accessories.push({ tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange } });
           if (m.price_1m_output_tokens != null)
@@ -276,7 +315,7 @@ function SearchSection({
           return (
             <List.Item
               key={m.id}
-              title={m.name ?? m.slug ?? "Unnamed"}
+              title={m.name ?? m.slug ?? "Model"}
               subtitle={m.creator_name ?? ""}
               accessories={accessories}
               actions={
@@ -287,14 +326,17 @@ function SearchSection({
                     target={<ModelDetail model={m} pinnedIds={pinnedIds} addPin={addPin} removePin={removePin} />}
                   />
                   <Action title="Switch to Leaderboards" icon={Icon.List} onAction={() => setMode("leaderboards")} />
-                  <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
-                    <Action title="Switch to Leaderboards" onAction={() => setMode("leaderboards")} />
-                    <ActionPanel.Section title="Pick Leaderboard Metric">
-                      {METRICS.map((opt) => (
-                        <Action key={opt.key} title={opt.label} onAction={() => setMetric(opt.key as MetricKey)} />
-                      ))}
-                    </ActionPanel.Section>
-                  </ActionPanel.Submenu>
+                  <Action
+                    title="Reset Filters"
+                    icon={Icon.XMarkCircle}
+                    shortcut={{ modifiers: ["cmd"], key: "backspace" }}
+                    onAction={async () => {
+                      await setCreatorFilter("");
+                      await setSearchText("");
+                      setQ("");
+                      void load("");
+                    }}
+                  />
                   <ActionPanel.Submenu title="Filter by Creator" shortcut={{ modifiers: ["cmd"], key: "p" }}>
                     <Action title="All Creators" onAction={() => setCreatorFilter("")} />
                     {[...new Set(rows.map((r) => r.creator_name).filter(Boolean) as string[])].map((name) => (
@@ -368,7 +410,7 @@ function LeaderboardSection({
       <List.Section title={`Top by ${metric}`} subtitle={isAsc ? "ascending" : "descending"}>
         {rows.map((r) => {
           const accessories: List.Item.Accessory[] = [];
-          if (r.slug) accessories.push({ text: r.slug });
+          // Removed slug accessory to avoid redundancy with title
           const value = (r as unknown as Record<string, number | null>)[metric];
           if (value != null)
             accessories.push({ tag: { value: String(value), color: isAsc ? Color.Orange : Color.Red } });
