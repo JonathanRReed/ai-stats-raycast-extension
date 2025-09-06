@@ -8,8 +8,13 @@ let client: SupabaseClient | null = null;
 export function sb(): SupabaseClient {
   if (client) return client;
   const { SUPABASE_URL, SUPABASE_ANON_KEY } = getPreferenceValues<Prefs>();
-  const url = SUPABASE_URL?.trim();
-  const key = SUPABASE_ANON_KEY?.trim();
+  // Fallback to hosted read-only project if preferences are not set
+  const DEFAULT_URL = "https://bgbqdzmgxkwstjihgeef.supabase.co";
+  const DEFAULT_ANON =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJnYnFkem1neGt3c3RqaWhnZWVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5MjMxOTUsImV4cCI6MjA2OTQ5OTE5NX0.Cp53ebjgdzSFBIKgB7UgMiSuu9dmrjBTWbrKbnKr8Sk";
+
+  const url = SUPABASE_URL?.trim() || DEFAULT_URL;
+  const key = SUPABASE_ANON_KEY?.trim() || DEFAULT_ANON;
 
   if (!url || !key) {
     void showToast({

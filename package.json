@@ -18,22 +18,6 @@
   ],
   "preferences": [
     {
-      "name": "SUPABASE_URL",
-      "type": "textfield",
-      "title": "Supabase URL",
-      "required": false,
-      "placeholder": "https://YOUR_PROJECT_REF.supabase.co",
-      "description": "Your Supabase project URL"
-    },
-    {
-      "name": "SUPABASE_ANON_KEY",
-      "type": "password",
-      "title": "Supabase Anon Key",
-      "required": false,
-      "placeholder": "Paste your anon JWT",
-      "description": "Anon JWT with read-only access via RLS"
-    },
-    {
       "name": "SHOW_PINNED_SECTION",
       "type": "checkbox",
       "title": "Show Pinned Section",
