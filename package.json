@@ -3,12 +3,13 @@
   "name": "ai-stats",
   "title": "AI Stats",
   "description": "AI model stats via Supabase",
-  "icon": "extension-icon.png",
+  "icon": "extension_icon.png",
   "author": "JonathanRReed",
   "license": "MIT",
   "commands": [
     {
       "name": "view",
+      "icon": "extension_icon.png",
       "title": "View AI Stats",
       "subtitle": "Search or Leaderboards",
       "description": "View AI models from Supabase: search and leaderboards",

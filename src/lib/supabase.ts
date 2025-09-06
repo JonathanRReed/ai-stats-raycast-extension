@@ -10,8 +10,7 @@ export function sb(): SupabaseClient {
   const { SUPABASE_URL, SUPABASE_ANON_KEY } = getPreferenceValues<Prefs>();
   // Fallback to hosted read-only project if preferences are not set
   const DEFAULT_URL = "https://bgbqdzmgxkwstjihgeef.supabase.co";
-  const DEFAULT_ANON =
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJnYnFkem1neGt3c3RqaWhnZWVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5MjMxOTUsImV4cCI6MjA2OTQ5OTE5NX0.Cp53ebjgdzSFBIKgB7UgMiSuu9dmrjBTWbrKbnKr8Sk";
+  const DEFAULT_ANON = "sb_publishable_i_viL-n7Gd7C9ijmmHtj5g_BgLbFmuf";
 
   const url = SUPABASE_URL?.trim() || DEFAULT_URL;
   const key = SUPABASE_ANON_KEY?.trim() || DEFAULT_ANON;

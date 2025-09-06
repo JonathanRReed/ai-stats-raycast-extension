@@ -6,6 +6,19 @@ Search models, view benchmark results, compare prices, and check leaderboards �
 
 🌐 Web version: [https://aistats.jonathanreed.com](https://aistats.jonathanreed.com)
 
+## Screenshots
+
+![AI Stats – Search](metadata/ai-stats-1.png)
+
+![AI Stats – Details & Actions](metadata/ai-stats-2.png)
+
+## Usage
+
+- Command: `View AI Stats`
+- Creator Filter: Cmd+P
+- Reset Filters: Cmd+Backspace
+- Pinned Models: Pin/Unpin from list or detail; Move Up/Down; optional Pinned section in preferences.
+
 ## Features
 
 - 🔍 **Search Models** – Find models by name, slug, or creator. Most recent models shown first.
@@ -25,7 +38,6 @@ Search models, view benchmark results, compare prices, and check leaderboards �
 
 - 📡 Stats come from [ArtificialAnalysis.ai](https://artificialanalysis.ai/) (via their free API).
 - Data and benchmarks are owned by ArtificialAnalysis.com.
-- Inspired by [Theo Browne’s Model Prices](https://model-prices.vercel.app/).
 
 ## Tech Stack
 
