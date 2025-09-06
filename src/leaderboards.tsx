@@ -10,10 +10,10 @@ const METRICS = [
   { key: "median_time_to_first_token_seconds", label: "Median TTFT (asc)" },
   { key: "price_1m_input_tokens", label: "Price per 1M Input Tokens (asc)" },
   { key: "price_1m_output_tokens", label: "Price per 1M Output Tokens (asc)" },
-  { key: "price_1m_blended_3_to_1", label: "Blended Price (3:1) (asc)" }
+  { key: "price_1m_blended_3_to_1", label: "Blended Price (3:1) (asc)" },
 ] as const;
 
-type MetricKey = typeof METRICS[number]["key"];
+type MetricKey = (typeof METRICS)[number]["key"];
 
 type Row = {
   id: string;
@@ -27,10 +27,7 @@ export default function Command() {
   const [rows, setRows] = useState<Row[]>([]);
   const [isLoading, setLoading] = useState(false);
 
-  const isAsc = useMemo(
-    () => metric === "median_time_to_first_token_seconds" || metric.startsWith("price_"),
-    [metric]
-  );
+  const isAsc = useMemo(() => metric === "median_time_to_first_token_seconds" || metric.startsWith("price_"), [metric]);
 
   async function load() {
     setLoading(true);
@@ -78,11 +75,7 @@ export default function Command() {
             ].filter(Boolean)}
             actions={
               <ActionPanel>
-                <Action
-                  title="Refresh"
-                  icon={Icon.ArrowClockwise}
-                  onAction={() => void load()}
-                />
+                <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load()} />
               </ActionPanel>
             }
           />

@@ -1,4 +1,4 @@
-import { Action, ActionPanel, Color, Detail, Icon, List, showToast, Toast } from "@raycast/api";
+import { Action, ActionPanel, Color, Detail, Icon, List, showToast, Toast, getPreferenceValues } from "@raycast/api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocalStorage } from "@raycast/utils";
 import { sb } from "./lib/supabase";
@@ -16,7 +16,7 @@ const METRICS = [
   { key: "median_time_to_first_token_seconds", label: "Median TTFT (asc)" },
   { key: "price_1m_input_tokens", label: "Price per 1M Input Tokens (asc)" },
   { key: "price_1m_output_tokens", label: "Price per 1M Output Tokens (asc)" },
-  { key: "price_1m_blended_3_to_1", label: "Blended Price (3:1) (asc)" }
+  { key: "price_1m_blended_3_to_1", label: "Blended Price (3:1) (asc)" },
 ] as const;
 
 function timeAgo(iso: string | null | undefined) {
@@ -41,26 +41,15 @@ function timeAgo(iso: string | null | undefined) {
   }
 }
 
-type MetricKey = typeof METRICS[number]["key"];
+type MetricKey = (typeof METRICS)[number]["key"];
 
 export default function View() {
+  const { SHOW_PINNED_SECTION = true } = getPreferenceValues<{ SHOW_PINNED_SECTION?: boolean }>();
   const { value: mode = "search", setValue: setMode } = useLocalStorage<Mode>("ai-stats-mode", "search");
-  const { value: metric = "mmlu_pro", setValue: setMetric } = useLocalStorage<MetricKey>(
-    "ai-stats-metric",
-    "mmlu_pro"
-  );
-  const { value: searchText = "", setValue: setSearchText } = useLocalStorage<string>(
-    "ai-stats-search",
-    ""
-  );
-  const { value: creatorFilter = "", setValue: setCreatorFilter } = useLocalStorage<string>(
-    "ai-stats-creator",
-    ""
-  );
-  const { value: pinnedIds = [], setValue: setPinnedIds } = useLocalStorage<string[]>(
-    "ai-stats-pinned-ids",
-    []
-  );
+  const { value: metric = "mmlu_pro", setValue: setMetric } = useLocalStorage<MetricKey>("ai-stats-metric", "mmlu_pro");
+  const { value: searchText = "", setValue: setSearchText } = useLocalStorage<string>("ai-stats-search", "");
+  const { value: creatorFilter = "", setValue: setCreatorFilter } = useLocalStorage<string>("ai-stats-creator", "");
+  const { value: pinnedIds = [], setValue: setPinnedIds } = useLocalStorage<string[]>("ai-stats-pinned-ids", []);
 
   function addPin(id: string) {
     const next = [id, ...pinnedIds.filter((x) => x !== id)].slice(0, 10);
@@ -70,8 +59,14 @@ export default function View() {
     const next = pinnedIds.filter((x) => x !== id);
     return setPinnedIds(next);
   }
-  function clearAllPins() {
-    return setPinnedIds([]);
+  function movePin(id: string, delta: number) {
+    const idx = pinnedIds.indexOf(id);
+    if (idx === -1) return;
+    const next = pinnedIds.slice();
+    const newIdx = Math.max(0, Math.min(next.length - 1, idx + delta));
+    next.splice(idx, 1);
+    next.splice(newIdx, 0, id);
+    setPinnedIds(next);
   }
 
   return (
@@ -85,9 +80,7 @@ export default function View() {
             <List.Dropdown.Item value="search" title="Search" />
             <List.Dropdown.Item value="leaderboards" title="Leaderboards" />
           </List.Dropdown>
-          {mode === "search" && (
-            <CreatorFilterDropdown value={creatorFilter} onChange={setCreatorFilter} />
-          )}
+          {mode === "search" && <CreatorFilterDropdown value={creatorFilter} onChange={setCreatorFilter} />}
           {mode === "leaderboards" && (
             <List.Dropdown tooltip="Metric" onChange={(v) => setMetric(v as MetricKey)}>
               {METRICS.map((m) => (
@@ -104,10 +97,12 @@ export default function View() {
           setMetric={setMetric}
           searchText={searchText}
           creatorFilter={creatorFilter}
+          setCreatorFilter={setCreatorFilter}
           pinnedIds={pinnedIds}
           addPin={addPin}
           removePin={removePin}
-          clearAllPins={clearAllPins}
+          movePin={movePin}
+          showPinnedSection={Boolean(SHOW_PINNED_SECTION)}
         />
       ) : (
         <LeaderboardSection metric={metric} setMode={setMode} setMetric={setMetric} />
@@ -121,19 +116,23 @@ function SearchSection({
   setMetric,
   searchText,
   creatorFilter,
+  setCreatorFilter,
   pinnedIds,
   addPin,
   removePin,
-  clearAllPins,
+  movePin,
+  showPinnedSection,
 }: {
   setMode: (m: Mode) => void;
   setMetric: (m: MetricKey) => void;
   searchText: string;
   creatorFilter: string;
+  setCreatorFilter: (v: string) => void | Promise<void>;
   pinnedIds: string[];
   addPin: (id: string) => void | Promise<void>;
   removePin: (id: string) => void | Promise<void>;
-  clearAllPins: () => void | Promise<void>;
+  movePin: (id: string, delta: number) => void | Promise<void>;
+  showPinnedSection: boolean;
 }) {
   const [q, setQ] = useState("");
   const [isLoading, setLoading] = useState(false);
@@ -150,7 +149,7 @@ function SearchSection({
       price_1m_input_tokens,price_1m_output_tokens,price_1m_blended_3_to_1,
       pricing,evaluations,first_seen,last_seen
     `.replace(/\s+/g, " "),
-    []
+    [],
   );
 
   async function load(query: string) {
@@ -167,7 +166,7 @@ function SearchSection({
       base = base.order("last_seen", { ascending: false });
       const { data, error } = await base;
       if (error) throw error;
-      setRows(((data ?? []) as unknown) as Model[]);
+      setRows((data ?? []) as unknown as Model[]);
     } catch (e: unknown) {
       console.error(e);
       let message = "Unknown error";
@@ -195,25 +194,29 @@ function SearchSection({
 
   const pinnedRows = rows.filter((r) => pinnedIds.includes(r.id));
   const listRows = rows.filter((r) => !pinnedIds.includes(r.id));
+  const updatedLabel = rows.length > 0 && rows[0]?.last_seen ? `Updated ${timeAgo(rows[0].last_seen)}` : undefined;
 
   return (
     <>
-      {isLoading && rows.length === 0 ? (
-        <List.EmptyView title="Loading…" />
-      ) : null}
+      {isLoading && rows.length === 0 ? <List.EmptyView title="Loading…" /> : null}
       {!isLoading && rows.length === 0 ? (
         <List.EmptyView title="No models found" description="Try another search term" />
       ) : null}
-      {pinnedRows.length > 0 && (
+      {showPinnedSection && pinnedRows.length > 0 && (
         <List.Section title="Pinned">
           {pinnedRows.map((m) => {
             const accessories: List.Item.Accessory[] = [];
             accessories.push({ tag: { value: "Pinned", color: Color.Yellow } });
             if (m.slug) accessories.push({ text: m.slug });
+            if (m.last_seen) accessories.push({ tag: { value: timeAgo(m.last_seen), color: Color.SecondaryText } });
             if (m.price_1m_input_tokens != null)
-              accessories.push({ tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange } });
+              accessories.push({
+                tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange },
+              });
             if (m.price_1m_output_tokens != null)
-              accessories.push({ tag: { value: `${formatPrice(m.price_1m_output_tokens)}/1M out`, color: Color.Orange } });
+              accessories.push({
+                tag: { value: `${formatPrice(m.price_1m_output_tokens)}/1M out`, color: Color.Orange },
+              });
             if (m.median_output_tokens_per_second != null)
               accessories.push({ tag: { value: `${m.median_output_tokens_per_second} tps`, color: Color.Red } });
             return (
@@ -230,6 +233,8 @@ function SearchSection({
                       target={<ModelDetail model={m} pinnedIds={pinnedIds} addPin={addPin} removePin={removePin} />}
                     />
                     <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => removePin(m.id)} />
+                    <Action title="Move Pin up" icon={Icon.ArrowUp} onAction={() => movePin(m.id, -1)} />
+                    <Action title="Move Pin Down" icon={Icon.ArrowDown} onAction={() => movePin(m.id, 1)} />
                     <Action title="Switch to Leaderboards" icon={Icon.List} onAction={() => setMode("leaderboards")} />
                     <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
                       <Action title="Switch to Leaderboards" onAction={() => setMode("leaderboards")} />
@@ -239,11 +244,11 @@ function SearchSection({
                         ))}
                       </ActionPanel.Section>
                     </ActionPanel.Submenu>
-                    <ActionPanel.Submenu title="Pinned Models" shortcut={{ modifiers: ["cmd"], key: "p" }}>
-                      {pinnedRows.map((pm) => (
-                        <Action key={pm.id} title={pm.name ?? pm.slug ?? pm.id} onAction={() => setMode("search")} />
+                    <ActionPanel.Submenu title="Filter by Creator" shortcut={{ modifiers: ["cmd"], key: "p" }}>
+                      <Action title="All Creators" onAction={() => setCreatorFilter("")} />
+                      {[...new Set(rows.map((r) => r.creator_name).filter(Boolean) as string[])].map((name) => (
+                        <Action key={name} title={name} onAction={() => setCreatorFilter(name)} />
                       ))}
-                      <Action title="Clear All Pins" onAction={() => clearAllPins()} />
                     </ActionPanel.Submenu>
                     <Action.CopyToClipboard title="Copy Name" content={m.name ?? ""} />
                     <Action.CopyToClipboard title="Copy Slug" content={m.slug ?? ""} />
@@ -254,59 +259,67 @@ function SearchSection({
           })}
         </List.Section>
       )}
-      <List.Section title="Models" subtitle={q}>
-      {listRows.map((m) => {
-        const accessories: List.Item.Accessory[] = [];
-        const isPinned = pinnedIds.includes(m.id);
-        if (isPinned) accessories.push({ tag: { value: "Pinned", color: Color.Yellow } });
-        if (m.slug) accessories.push({ text: m.slug });
-        if (m.price_1m_input_tokens != null)
-          accessories.push({ tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange } });
-        if (m.price_1m_output_tokens != null)
-          accessories.push({ tag: { value: `${formatPrice(m.price_1m_output_tokens)}/1M out`, color: Color.Orange } });
-        if (m.median_output_tokens_per_second != null)
-          accessories.push({ tag: { value: `${m.median_output_tokens_per_second} tps`, color: Color.Red } });
-        return (
-        <List.Item
-          key={m.id}
-          title={m.name ?? m.slug ?? "Unnamed"}
-          subtitle={m.creator_name ?? ""}
-          accessories={accessories}
-          actions={
-            <ActionPanel>
-              <Action.Push
-                title="Open Details"
-                icon={Icon.Sidebar}
-                target={<ModelDetail model={m} pinnedIds={pinnedIds} addPin={addPin} removePin={removePin} />}
-              />
-              <Action title="Switch to Leaderboards" icon={Icon.List} onAction={() => setMode("leaderboards")} />
-              <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
-                <Action title="Switch to Leaderboards" onAction={() => setMode("leaderboards")} />
-                <ActionPanel.Section title="Pick Leaderboard Metric">
-                  {METRICS.map((opt) => (
-                    <Action key={opt.key} title={opt.label} onAction={() => setMetric(opt.key as MetricKey)} />
-                  ))}
-                </ActionPanel.Section>
-              </ActionPanel.Submenu>
-              {isPinned ? (
-                <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => removePin(m.id)} />
-              ) : (
-                <Action title="Pin Model" icon={Icon.Pin} onAction={() => addPin(m.id)} />
-              )}
-              <ActionPanel.Submenu title="Pinned Models" shortcut={{ modifiers: ["cmd"], key: "p" }}>
-                {pinnedRows.map((pm) => (
-                  <Action key={pm.id} title={pm.name ?? pm.slug ?? pm.id} onAction={() => setMode("search")} />
-                ))}
-                <Action title="Clear All Pins" onAction={() => clearAllPins()} />
-              </ActionPanel.Submenu>
-              <Action.CopyToClipboard title="Copy Name" content={m.name ?? ""} />
-              <Action.CopyToClipboard title="Copy Slug" content={m.slug ?? ""} />
-              <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load(q)} />
-            </ActionPanel>
-          }
-        />
-        );
-      })}
+      <List.Section title="Models" subtitle={updatedLabel ?? q}>
+        {listRows.map((m) => {
+          const accessories: List.Item.Accessory[] = [];
+          const isPinned = pinnedIds.includes(m.id);
+          if (isPinned) accessories.push({ tag: { value: "Pinned", color: Color.Yellow } });
+          if (m.slug) accessories.push({ text: m.slug });
+          if (m.price_1m_input_tokens != null)
+            accessories.push({ tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange } });
+          if (m.price_1m_output_tokens != null)
+            accessories.push({
+              tag: { value: `${formatPrice(m.price_1m_output_tokens)}/1M out`, color: Color.Orange },
+            });
+          if (m.median_output_tokens_per_second != null)
+            accessories.push({ tag: { value: `${m.median_output_tokens_per_second} tps`, color: Color.Red } });
+          return (
+            <List.Item
+              key={m.id}
+              title={m.name ?? m.slug ?? "Unnamed"}
+              subtitle={m.creator_name ?? ""}
+              accessories={accessories}
+              actions={
+                <ActionPanel>
+                  <Action.Push
+                    title="Open Details"
+                    icon={Icon.Sidebar}
+                    target={<ModelDetail model={m} pinnedIds={pinnedIds} addPin={addPin} removePin={removePin} />}
+                  />
+                  <Action title="Switch to Leaderboards" icon={Icon.List} onAction={() => setMode("leaderboards")} />
+                  <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
+                    <Action title="Switch to Leaderboards" onAction={() => setMode("leaderboards")} />
+                    <ActionPanel.Section title="Pick Leaderboard Metric">
+                      {METRICS.map((opt) => (
+                        <Action key={opt.key} title={opt.label} onAction={() => setMetric(opt.key as MetricKey)} />
+                      ))}
+                    </ActionPanel.Section>
+                  </ActionPanel.Submenu>
+                  <ActionPanel.Submenu title="Filter by Creator" shortcut={{ modifiers: ["cmd"], key: "p" }}>
+                    <Action title="All Creators" onAction={() => setCreatorFilter("")} />
+                    {[...new Set(rows.map((r) => r.creator_name).filter(Boolean) as string[])].map((name) => (
+                      <Action key={name} title={name} onAction={() => setCreatorFilter(name)} />
+                    ))}
+                  </ActionPanel.Submenu>
+                  {isPinned ? (
+                    <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => removePin(m.id)} />
+                  ) : (
+                    <Action title="Pin Model" icon={Icon.Pin} onAction={() => addPin(m.id)} />
+                  )}
+                  {isPinned && (
+                    <>
+                      <Action title="Move Pin up" icon={Icon.ArrowUp} onAction={() => movePin(m.id, -1)} />
+                      <Action title="Move Pin Down" icon={Icon.ArrowDown} onAction={() => movePin(m.id, 1)} />
+                    </>
+                  )}
+                  <Action.CopyToClipboard title="Copy Name" content={m.name ?? ""} />
+                  <Action.CopyToClipboard title="Copy Slug" content={m.slug ?? ""} />
+                  <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load(q)} />
+                </ActionPanel>
+              }
+            />
+          );
+        })}
       </List.Section>
     </>
   );
@@ -324,10 +337,7 @@ function LeaderboardSection({
   const [rows, setRows] = useState<Model[]>([]);
   const [isLoading, setLoading] = useState(false);
 
-  const isAsc = useMemo(
-    () => metric === "median_time_to_first_token_seconds" || metric.startsWith("price_"),
-    [metric]
-  );
+  const isAsc = useMemo(() => metric === "median_time_to_first_token_seconds" || metric.startsWith("price_"), [metric]);
 
   async function load() {
     setLoading(true);
@@ -343,7 +353,7 @@ function LeaderboardSection({
       console.error(error);
       setRows([]);
     } else {
-      setRows(((data ?? []) as unknown) as Model[]);
+      setRows((data ?? []) as unknown as Model[]);
     }
     setLoading(false);
   }
@@ -356,46 +366,41 @@ function LeaderboardSection({
     <>
       {isLoading && rows.length === 0 ? <List.EmptyView title="Loading…" /> : null}
       <List.Section title={`Top by ${metric}`} subtitle={isAsc ? "ascending" : "descending"}>
-      {rows.map((r) => {
-        const accessories: List.Item.Accessory[] = [];
-        if (r.slug) accessories.push({ text: r.slug });
-        const value = (r as unknown as Record<string, number | null>)[metric];
-        if (value != null) accessories.push({ tag: { value: String(value), color: isAsc ? Color.Orange : Color.Red } });
-        return (
-          <List.Item
-            key={r.id}
-            title={r.name ?? r.slug ?? "Model"}
-            subtitle={r.creator_name ?? ""}
-            accessories={accessories}
-            actions={
-              <ActionPanel>
-                <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
-                  <Action title="Switch to Search" onAction={() => setMode("search")} />
-                  <ActionPanel.Section title="Pick Leaderboard Metric">
-                    {METRICS.map((opt) => (
-                      <Action key={opt.key} title={opt.label} onAction={() => setMetric(opt.key as MetricKey)} />
-                    ))}
-                  </ActionPanel.Section>
-                </ActionPanel.Submenu>
-                <Action title="Switch to Search" icon={Icon.MagnifyingGlass} onAction={() => setMode("search")} />
-                <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load()} />
-              </ActionPanel>
-            }
-          />
-        );
-      })}
+        {rows.map((r) => {
+          const accessories: List.Item.Accessory[] = [];
+          if (r.slug) accessories.push({ text: r.slug });
+          const value = (r as unknown as Record<string, number | null>)[metric];
+          if (value != null)
+            accessories.push({ tag: { value: String(value), color: isAsc ? Color.Orange : Color.Red } });
+          return (
+            <List.Item
+              key={r.id}
+              title={r.name ?? r.slug ?? "Model"}
+              subtitle={r.creator_name ?? ""}
+              accessories={accessories}
+              actions={
+                <ActionPanel>
+                  <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
+                    <Action title="Switch to Search" onAction={() => setMode("search")} />
+                    <ActionPanel.Section title="Pick Leaderboard Metric">
+                      {METRICS.map((opt) => (
+                        <Action key={opt.key} title={opt.label} onAction={() => setMetric(opt.key as MetricKey)} />
+                      ))}
+                    </ActionPanel.Section>
+                  </ActionPanel.Submenu>
+                  <Action title="Switch to Search" icon={Icon.MagnifyingGlass} onAction={() => setMode("search")} />
+                  <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load()} />
+                </ActionPanel>
+              }
+            />
+          );
+        })}
       </List.Section>
     </>
   );
 }
 
-function CreatorFilterDropdown({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void | Promise<void>;
-}) {
+function CreatorFilterDropdown({ value, onChange }: { value: string; onChange: (v: string) => void | Promise<void> }) {
   const [creators, setCreators] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -520,13 +525,13 @@ function ModelDetail({
       markdown={md}
       actions={
         <ActionPanel>
-          {addPin && removePin && (
-            isPinned ? (
+          {addPin &&
+            removePin &&
+            (isPinned ? (
               <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => removePin(model.id)} />
             ) : (
               <Action title="Pin Model" icon={Icon.Pin} onAction={() => addPin(model.id)} />
-            )
-          )}
+            ))}
           <Action.CopyToClipboard title="Copy Slug" content={model.slug ?? ""} />
         </ActionPanel>
       }
@@ -537,9 +542,7 @@ function ModelDetail({
 function formatPrice(n: number) {
   // formats 0.15 -> $0.15, 12 -> $12
   try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(
-      n
-    );
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(n);
   } catch {
     return `$${n}`;
   }

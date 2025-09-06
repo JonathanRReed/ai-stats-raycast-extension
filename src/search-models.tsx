@@ -45,7 +45,7 @@ export default function Command() {
       price_1m_input_tokens,price_1m_output_tokens,price_1m_blended_3_to_1,
       pricing,evaluations,first_seen,last_seen
     `.replace(/\s+/g, " "),
-    []
+    [],
   );
 
   async function load(query: string) {
@@ -55,17 +55,20 @@ export default function Command() {
       let base = client.from("aa_models").select(selectColumns).limit(100);
 
       if (query) {
-        base = base.or(
-          `name.ilike.*${query}*,slug.ilike.*${query}*,creator_name.ilike.*${query}*`
-        );
+        base = base.or(`name.ilike.*${query}*,slug.ilike.*${query}*,creator_name.ilike.*${query}*`);
       }
 
       const { data, error } = await base;
       if (error) throw error;
-      setRows((data as Model[]) ?? []);
-    } catch (e: any) {
+      setRows((data ?? []) as unknown as Model[]);
+    } catch (e: unknown) {
       console.error(e);
-      void showToast({ style: Toast.Style.Failure, title: "Failed to load models", message: e?.message });
+      let message = "Unknown error";
+      if (e && typeof e === "object" && "message" in e) {
+        const m = (e as { message?: unknown }).message;
+        message = typeof m === "string" ? m : JSON.stringify(m);
+      }
+      void showToast({ style: Toast.Style.Failure, title: "Failed to load models", message });
       setRows([]);
     } finally {
       setLoading(false);
@@ -90,36 +93,29 @@ export default function Command() {
       searchText={q}
     >
       <List.Section title="Models">
-        {rows.map((m) => (
-          <List.Item
-            key={m.id}
-            title={m.name ?? m.slug ?? "Unnamed"}
-            subtitle={m.creator_name ?? ""}
-            accessories={[
-              m.slug ? { text: m.slug } : undefined,
-              m.mmlu_pro != null ? { tag: `${m.mmlu_pro} MMLU` } : undefined,
-              m.median_output_tokens_per_second != null
-                ? { tag: `${m.median_output_tokens_per_second} tps` }
-                : undefined,
-            ].filter(Boolean)}
-            actions={
-              <ActionPanel>
-                <Action.Push
-                  title="Open Details"
-                  icon={Icon.Sidebar}
-                  target={<ModelDetail model={m} />}
-                />
-                <Action.CopyToClipboard title="Copy Name" content={m.name ?? ""} />
-                <Action.CopyToClipboard title="Copy Slug" content={m.slug ?? ""} />
-                <Action
-                  title="Refresh"
-                  icon={Icon.ArrowClockwise}
-                  onAction={() => void load(q)}
-                />
-              </ActionPanel>
-            }
-          />
-        ))}
+        {rows.map((m) => {
+          const accessories: List.Item.Accessory[] = [];
+          if (m.slug) accessories.push({ text: m.slug });
+          if (m.mmlu_pro != null) accessories.push({ tag: `${m.mmlu_pro} MMLU` });
+          if (m.median_output_tokens_per_second != null)
+            accessories.push({ tag: `${m.median_output_tokens_per_second} tps` });
+          return (
+            <List.Item
+              key={m.id}
+              title={m.name ?? m.slug ?? "Unnamed"}
+              subtitle={m.creator_name ?? ""}
+              accessories={accessories}
+              actions={
+                <ActionPanel>
+                  <Action.Push title="Open Details" icon={Icon.Sidebar} target={<ModelDetail model={m} />} />
+                  <Action.CopyToClipboard title="Copy Name" content={m.name ?? ""} />
+                  <Action.CopyToClipboard title="Copy Slug" content={m.slug ?? ""} />
+                  <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load(q)} />
+                </ActionPanel>
+              }
+            />
+          );
+        })}
       </List.Section>
     </List>
   );
