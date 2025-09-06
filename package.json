@@ -3,18 +3,20 @@
   "name": "ai-stats",
   "title": "AI Stats",
   "description": "AI model stats via Supabase",
+  "version": "1.0.0",
   "icon": "extension_icon.png",
   "author": "JonathanRReed",
   "license": "MIT",
+  "categories": ["Developer Tools", "Data"],
   "commands": [
     {
       "name": "view",
       "icon": "extension_icon.png",
       "title": "View AI Stats",
-      "subtitle": "Search or Leaderboards",
+      "subtitle": "AI Benchmarks & Pricing",
       "description": "View AI models from Supabase: search and leaderboards",
       "mode": "view",
-      "keywords": ["ai", "models", "supabase", "search", "leaderboard"]
+      "keywords": ["ai", "models", "Benchmark", "search", "leaderboard"]
     }
   ],
   "preferences": [

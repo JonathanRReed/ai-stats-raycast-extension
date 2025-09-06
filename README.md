@@ -37,12 +37,7 @@ Search models, view benchmark results, compare prices, and check leaderboards �
 ## Data Source
 
 - 📡 Stats come from [ArtificialAnalysis.ai](https://artificialanalysis.ai/) (via their free API).
-- Data and benchmarks are owned by ArtificialAnalysis.com.
-
-## Tech Stack
-
-- Raycast API – extension framework
-- Supabase – hosted database (read-only)
+- Data and benchmarks are owned by ArtificialAnalysis.com. But hosted by a supabase database to reduced API calls.
 
 ## License
 

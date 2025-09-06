@@ -20,7 +20,7 @@ const METRICS = [
 ] as const;
 
 function timeAgo(iso: string | null | undefined) {
-  if (!iso) return "-";
+  if (!iso) return "N/A";
   try {
     const then = new Date(iso).getTime();
     const now = Date.now();
@@ -37,11 +37,20 @@ function timeAgo(iso: string | null | undefined) {
     const years = Math.floor(months / 12);
     return `${years}y ago`;
   } catch {
-    return "-";
+    return "N/A";
   }
 }
 
 type MetricKey = (typeof METRICS)[number]["key"];
+
+function isMissing(v: number | null | undefined): boolean {
+  return v == null || v === 0;
+}
+
+function na(v: number | string | null | undefined): string {
+  if (typeof v === "number") return isMissing(v) ? "N/A" : String(v);
+  return v == null || v === "" ? "N/A" : String(v);
+}
 
 export default function View() {
   const { SHOW_PINNED_SECTION = true } = getPreferenceValues<{ SHOW_PINNED_SECTION?: boolean }>();
@@ -246,16 +255,21 @@ function SearchSection({
           {pinnedRows.map((m) => {
             const accessories: List.Item.Accessory[] = [];
             accessories.push({ tag: { value: "Pinned", color: Color.Yellow } });
-            if (m.price_1m_input_tokens != null)
-              accessories.push({
-                tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange },
-              });
-            if (m.price_1m_output_tokens != null)
-              accessories.push({
-                tag: { value: `${formatPrice(m.price_1m_output_tokens)}/1M out`, color: Color.Orange },
-              });
-            if (m.median_output_tokens_per_second != null)
-              accessories.push({ tag: { value: `${m.median_output_tokens_per_second} tps`, color: Color.Red } });
+            if (m.price_1m_input_tokens != null && m.price_1m_input_tokens !== 0) {
+              accessories.push({ tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Red } });
+            } else {
+              accessories.push({ tag: { value: `N/A in`, color: Color.SecondaryText } });
+            }
+            if (m.price_1m_output_tokens != null && m.price_1m_output_tokens !== 0) {
+              accessories.push({ tag: { value: `${formatPrice(m.price_1m_output_tokens)}/1M out`, color: Color.Red } });
+            } else {
+              accessories.push({ tag: { value: `N/A out`, color: Color.SecondaryText } });
+            }
+            if (m.median_output_tokens_per_second != null && m.median_output_tokens_per_second !== 0) {
+              accessories.push({ tag: { value: `${m.median_output_tokens_per_second} tps`, color: Color.Orange } });
+            } else {
+              accessories.push({ tag: { value: `N/A tps`, color: Color.SecondaryText } });
+            }
             return (
               <List.Item
                 key={`pinned-${m.id}`}
@@ -304,14 +318,21 @@ function SearchSection({
           const accessories: List.Item.Accessory[] = [];
           const isPinned = pinnedIds.includes(m.id);
           if (isPinned) accessories.push({ tag: { value: "Pinned", color: Color.Yellow } });
-          if (m.price_1m_input_tokens != null)
-            accessories.push({ tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange } });
-          if (m.price_1m_output_tokens != null)
-            accessories.push({
-              tag: { value: `${formatPrice(m.price_1m_output_tokens)}/1M out`, color: Color.Orange },
-            });
-          if (m.median_output_tokens_per_second != null)
-            accessories.push({ tag: { value: `${m.median_output_tokens_per_second} tps`, color: Color.Red } });
+          if (m.price_1m_input_tokens != null && m.price_1m_input_tokens !== 0) {
+            accessories.push({ tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Red } });
+          } else {
+            accessories.push({ tag: { value: `N/A in`, color: Color.SecondaryText } });
+          }
+          if (m.price_1m_output_tokens != null && m.price_1m_output_tokens !== 0) {
+            accessories.push({ tag: { value: `${formatPrice(m.price_1m_output_tokens)}/1M out`, color: Color.Red } });
+          } else {
+            accessories.push({ tag: { value: `N/A out`, color: Color.SecondaryText } });
+          }
+          if (m.median_output_tokens_per_second != null && m.median_output_tokens_per_second !== 0) {
+            accessories.push({ tag: { value: `${m.median_output_tokens_per_second} tps`, color: Color.Orange } });
+          } else {
+            accessories.push({ tag: { value: `N/A tps`, color: Color.SecondaryText } });
+          }
           return (
             <List.Item
               key={m.id}
@@ -337,10 +358,10 @@ function SearchSection({
                       void load("");
                     }}
                   />
-                  <ActionPanel.Submenu title="Filter by Creator" shortcut={{ modifiers: ["cmd"], key: "p" }}>
-                    <Action title="All Creators" onAction={() => setCreatorFilter("")} />
+                  <ActionPanel.Submenu title="Filter by Creator" icon={Icon.Person} shortcut={{ modifiers: ["cmd"], key: "p" }}>
+                    <Action title="All Creators" icon={Icon.Person} onAction={() => setCreatorFilter("")} />
                     {[...new Set(rows.map((r) => r.creator_name).filter(Boolean) as string[])].map((name) => (
-                      <Action key={name} title={name} onAction={() => setCreatorFilter(name)} />
+                      <Action key={name} title={name} icon={Icon.Person} onAction={() => setCreatorFilter(name)} />
                     ))}
                   </ActionPanel.Submenu>
                   {isPinned ? (
@@ -354,8 +375,7 @@ function SearchSection({
                       <Action title="Move Pin Down" icon={Icon.ArrowDown} onAction={() => movePin(m.id, 1)} />
                     </>
                   )}
-                  <Action.CopyToClipboard title="Copy Name" content={m.name ?? ""} />
-                  <Action.CopyToClipboard title="Copy Slug" content={m.slug ?? ""} />
+                  <Action.CopyToClipboard title="Copy Name" icon={Icon.Clipboard} content={m.name ?? ""} />
                   <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load(q)} />
                 </ActionPanel>
               }
@@ -412,8 +432,11 @@ function LeaderboardSection({
           const accessories: List.Item.Accessory[] = [];
           // Removed slug accessory to avoid redundancy with title
           const value = (r as unknown as Record<string, number | null>)[metric];
-          if (value != null)
+          if (value != null && value !== 0) {
             accessories.push({ tag: { value: String(value), color: isAsc ? Color.Orange : Color.Red } });
+          } else {
+            accessories.push({ tag: { value: "N/A", color: Color.SecondaryText } });
+          }
           return (
             <List.Item
               key={r.id}
@@ -422,15 +445,28 @@ function LeaderboardSection({
               accessories={accessories}
               actions={
                 <ActionPanel>
-                  <ActionPanel.Submenu title="Quick Switcher" shortcut={{ modifiers: ["cmd"], key: "k" }}>
-                    <Action title="Switch to Search" onAction={() => setMode("search")} />
+                  <Action.Push
+                    title="Open Details"
+                    icon={Icon.Sidebar}
+                    target={<ModelDetail model={r as unknown as Model} />}
+                  />
+                  <Action title="Switch to Search" icon={Icon.MagnifyingGlass} onAction={() => setMode("search")} />
+                  <ActionPanel.Submenu
+                    title="Change Leaderboard"
+                    icon={Icon.List}
+                    shortcut={{ modifiers: ["cmd"], key: "k" }}
+                  >
                     <ActionPanel.Section title="Pick Leaderboard Metric">
                       {METRICS.map((opt) => (
-                        <Action key={opt.key} title={opt.label} onAction={() => setMetric(opt.key as MetricKey)} />
+                        <Action
+                          key={opt.key}
+                          title={opt.label}
+                          icon={Icon.Dot}
+                          onAction={() => setMetric(opt.key as MetricKey)}
+                        />
                       ))}
                     </ActionPanel.Section>
                   </ActionPanel.Submenu>
-                  <Action title="Switch to Search" icon={Icon.MagnifyingGlass} onAction={() => setMode("search")} />
                   <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void load()} />
                 </ActionPanel>
               }
@@ -478,22 +514,32 @@ function CreatorFilterDropdown({ value, onChange }: { value: string; onChange: (
   );
 }
 
-function modelMarkdown(model: Model) {
-  const priceInput = model.price_1m_input_tokens != null ? formatPrice(model.price_1m_input_tokens) : "-";
-  const priceOutput = model.price_1m_output_tokens != null ? formatPrice(model.price_1m_output_tokens) : "-";
-  const priceBlended = model.price_1m_blended_3_to_1 != null ? formatPrice(model.price_1m_blended_3_to_1) : "-";
-  const tps = model.median_output_tokens_per_second ?? "-";
-  const ttft = model.median_time_to_first_token_seconds ?? "-";
+function buildModelMarkdown(model: Model) {
+  const priceInput = !isMissing(model.price_1m_input_tokens)
+    ? formatPrice(model.price_1m_input_tokens as number)
+    : "N/A";
+  const priceOutput = !isMissing(model.price_1m_output_tokens)
+    ? formatPrice(model.price_1m_output_tokens as number)
+    : "N/A";
+  const priceBlended = !isMissing(model.price_1m_blended_3_to_1)
+    ? formatPrice(model.price_1m_blended_3_to_1 as number)
+    : "N/A";
+  const tps = !isMissing(model.median_output_tokens_per_second)
+    ? String(model.median_output_tokens_per_second)
+    : "N/A";
+  const ttft = !isMissing(model.median_time_to_first_token_seconds)
+    ? String(model.median_time_to_first_token_seconds)
+    : "N/A";
   const updatedAgo = timeAgo(model.last_seen);
 
   const overview = `
 | Field | Value |
 |------:|:------|
-| Name | ${model.name ?? model.slug ?? "-"} |
-| Slug | ${model.slug ?? "-"} |
-| Creator | ${model.creator_name ?? "-"} (${model.creator_slug ?? "-"}) |
-| First Seen | ${model.first_seen ?? "-"} |
-| Last Seen | ${model.last_seen ?? "-"} (${updatedAgo}) |
+| Name | ${na(model.name ?? model.slug)} |
+| Slug | ${na(model.slug)} |
+| Creator | ${na(model.creator_name)} (${na(model.creator_slug)}) |
+| First Seen | ${na(model.first_seen)} |
+| Last Seen | ${na(model.last_seen)} (${updatedAgo}) |
 `;
 
   const pricingTbl = `
@@ -507,19 +553,26 @@ function modelMarkdown(model: Model) {
   const benchmarks = `
 | Benchmark | Score |
 |---------:|:------|
-| Intelligence Index | ${model.aa_intelligence_index ?? "-"} |
-| Coding Index | ${model.aa_coding_index ?? "-"} |
-| Math Index | ${model.aa_math_index ?? "-"} |
-| MMLU Pro | ${model.mmlu_pro ?? "-"} |
-| GPQA | ${model.gpqa ?? "-"} |
-| LiveCodeBench | ${model.livecodebench ?? "-"} |
-| SciCode | ${model.scicode ?? "-"} |
-| Math 500 | ${model.math_500 ?? "-"} |
-| AIME | ${model.aime ?? "-"} |
-| HLE | ${model.hle ?? "-"} |
+| Intelligence Index | ${na(model.aa_intelligence_index)} |
+| Coding Index | ${na(model.aa_coding_index)} |
+| Math Index | ${na(model.aa_math_index)} |
+| MMLU Pro | ${na(model.mmlu_pro)} |
+| GPQA | ${na(model.gpqa)} |
+| LiveCodeBench | ${na(model.livecodebench)} |
+| SciCode | ${na(model.scicode)} |
+| Math 500 | ${na(model.math_500)} |
+| AIME | ${na(model.aime)} |
+| HLE | ${na(model.hle)} |
 `;
 
-  return `# ${model.name ?? model.slug ?? "Model"}
+  const throughputTbl = `
+| Metric | Value |
+|------:|:------|
+| Median Tokens/sec | ${tps} |
+| Median TTFT (s) | ${ttft} |
+`;
+
+  const full = `# ${model.name ?? model.slug ?? "Model"}
 
 ## Overview
 ${overview}
@@ -528,10 +581,7 @@ ${overview}
 ${pricingTbl}
 
 ## Throughput & Latency
-| Metric | Value |
-|------:|:------|
-| Median Tokens/sec | ${tps} |
-| Median TTFT (s) | ${ttft} |
+${throughputTbl}
 
 ## Benchmarks
 ${benchmarks}
@@ -543,6 +593,12 @@ ${fencedJson(model.pricing ?? {})}
 ### Evaluations JSON
 ${fencedJson(model.evaluations ?? {})}
 `;
+
+  return { overview, pricingTbl, throughputTbl, benchmarks, full };
+}
+
+function modelMarkdown(model: Model) {
+  return buildModelMarkdown(model).full;
 }
 
 function fencedJson(val: unknown) {
@@ -574,7 +630,25 @@ function ModelDetail({
             ) : (
               <Action title="Pin Model" icon={Icon.Pin} onAction={() => addPin(model.id)} />
             ))}
-          <Action.CopyToClipboard title="Copy Slug" content={model.slug ?? ""} />
+          <ActionPanel.Submenu title="Copy Info" icon={Icon.Clipboard}>
+            {(() => {
+              const name = model.name ?? model.slug ?? "Model";
+              const overviewText = `Name: ${na(model.name ?? model.slug)}\nSlug: ${na(model.slug)}\nCreator: ${na(model.creator_name)} (${na(model.creator_slug)})\nFirst Seen: ${na(model.first_seen)}\nLast Seen: ${na(model.last_seen)} (${timeAgo(model.last_seen)})`;
+              const pricingText = `Input (1M): ${!isMissing(model.price_1m_input_tokens) ? formatPrice(model.price_1m_input_tokens as number) : "N/A"}\nOutput (1M): ${!isMissing(model.price_1m_output_tokens) ? formatPrice(model.price_1m_output_tokens as number) : "N/A"}\nBlended 3:1 (1M): ${!isMissing(model.price_1m_blended_3_to_1) ? formatPrice(model.price_1m_blended_3_to_1 as number) : "N/A"}`;
+              const throughputText = `Median Tokens/sec: ${!isMissing(model.median_output_tokens_per_second) ? String(model.median_output_tokens_per_second) : "N/A"}\nMedian TTFT (s): ${!isMissing(model.median_time_to_first_token_seconds) ? String(model.median_time_to_first_token_seconds) : "N/A"}`;
+              const benchmarksText = `Intelligence Index: ${na(model.aa_intelligence_index)}\nCoding Index: ${na(model.aa_coding_index)}\nMath Index: ${na(model.aa_math_index)}\nMMLU Pro: ${na(model.mmlu_pro)}\nGPQA: ${na(model.gpqa)}\nLiveCodeBench: ${na(model.livecodebench)}\nSciCode: ${na(model.scicode)}\nMath 500: ${na(model.math_500)}\nAIME: ${na(model.aime)}\nHLE: ${na(model.hle)}`;
+              const fullText = `${name}\n\nOverview\n${overviewText}\n\nPricing\n${pricingText}\n\nThroughput & Latency\n${throughputText}\n\nBenchmarks\n${benchmarksText}`;
+              return (
+                <>
+                  <Action.CopyToClipboard title="Copy Overview" icon={Icon.Clipboard} content={overviewText} />
+                  <Action.CopyToClipboard title="Copy Pricing" icon={Icon.Clipboard} content={pricingText} />
+                  <Action.CopyToClipboard title="Copy Throughput" icon={Icon.Clipboard} content={throughputText} />
+                  <Action.CopyToClipboard title="Copy Benchmarks" icon={Icon.Clipboard} content={benchmarksText} />
+                  <Action.CopyToClipboard title="Copy All" icon={Icon.Clipboard} content={fullText} />
+                </>
+              );
+            })()}
+          </ActionPanel.Submenu>
         </ActionPanel>
       }
     />
