@@ -1,8 +1,24 @@
-import { Action, ActionPanel, Color, Detail, Icon, List, getPreferenceValues } from "@raycast/api";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Action,
+  ActionPanel,
+  Color,
+  Detail,
+  Icon,
+  List,
+  getPreferenceValues,
+  useNavigation,
+  showToast,
+  Toast,
+} from "@raycast/api";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCachedPromise, useLocalStorage } from "@raycast/utils";
 import { sb } from "./lib/supabase";
 import type { Model } from "./lib/types";
+import { usePinnedModels, usePinnedModelsData, splitPinned } from "./lib/usePinnedModels";
+
+// Full set of columns required to render ModelDetail and main Search list
+const MODEL_FULL_COLUMNS =
+  "id,name,slug,creator_name,creator_slug,aa_intelligence_index,aa_coding_index,aa_math_index,mmlu_pro,gpqa,livecodebench,scicode,math_500,aime,hle,median_output_tokens_per_second,median_time_to_first_token_seconds,price_1m_input_tokens,price_1m_output_tokens,price_1m_blended_3_to_1,pricing,evaluations,first_seen,last_seen";
 
 // Model type imported from ./lib/types
 
@@ -65,40 +81,13 @@ function na(v: number | string | null | undefined): string {
 }
 
 export default function View() {
-  const { SHOW_PINNED_SECTION = true } = getPreferenceValues<{ SHOW_PINNED_SECTION?: boolean }>();
-  const { value: mode = "search", setValue: setMode } = useLocalStorage<Mode>("ai-stats-mode", "search");
+  // Always start in Search (do not persist mode to avoid initial flicker)
+  const [mode, setMode] = useState<Mode>("search");
   const { value: metric = "mmlu_pro", setValue: setMetric } = useLocalStorage<MetricKey>("ai-stats-metric", "mmlu_pro");
   const [searchText, setSearchText] = useState<string>("");
   const { value: creatorFilter = "", setValue: setCreatorFilter } = useLocalStorage<string>("ai-stats-creator", "");
-  const { value: pinnedIds = [], setValue: setPinnedIds } = useLocalStorage<string[]>("ai-stats-pinned-ids", []);
+  const { pinnedIds, addPin, removePin, movePin } = usePinnedModels(10);
   const [listLoading, setListLoading] = useState(false);
-
-  const addPin = useCallback(
-    (id: string) => {
-      const next = [id, ...pinnedIds.filter((x) => x !== id)].slice(0, 10);
-      return setPinnedIds(next);
-    },
-    [pinnedIds, setPinnedIds],
-  );
-  const removePin = useCallback(
-    (id: string) => {
-      const next = pinnedIds.filter((x) => x !== id);
-      return setPinnedIds(next);
-    },
-    [pinnedIds, setPinnedIds],
-  );
-  const movePin = useCallback(
-    (id: string, delta: number) => {
-      const idx = pinnedIds.indexOf(id);
-      if (idx === -1) return;
-      const next = pinnedIds.slice();
-      const newIdx = Math.max(0, Math.min(next.length - 1, idx + delta));
-      next.splice(idx, 1);
-      next.splice(newIdx, 0, id);
-      setPinnedIds(next);
-    },
-    [pinnedIds, setPinnedIds],
-  );
 
   return (
     <List
@@ -112,7 +101,7 @@ export default function View() {
       searchText={searchText}
       searchBarAccessory={
         <>
-          <List.Dropdown tooltip="Mode" onChange={(v) => setMode(v as Mode)} storeValue>
+          <List.Dropdown tooltip="Mode" value={mode} onChange={(v) => setMode(v as Mode)}>
             <List.Dropdown.Item value="search" title="Search" />
             <List.Dropdown.Item value="leaderboards" title="Leaderboards" />
           </List.Dropdown>
@@ -152,11 +141,18 @@ export default function View() {
           addPin={addPin}
           removePin={removePin}
           movePin={movePin}
-          showPinnedSection={Boolean(SHOW_PINNED_SECTION)}
           onLoadingChange={setListLoading}
         />
       ) : (
-        <LeaderboardSection metric={metric} setMode={setMode} setMetric={setMetric} onLoadingChange={setListLoading} />
+        <LeaderboardSection
+          metric={metric}
+          setMode={setMode}
+          setMetric={setMetric}
+          onLoadingChange={setListLoading}
+          pinnedIds={pinnedIds}
+          addPin={addPin}
+          removePin={removePin}
+        />
       )}
     </List>
   );
@@ -172,7 +168,6 @@ type SearchSectionProps = {
   addPin: (id: string) => void | Promise<void>;
   removePin: (id: string) => void | Promise<void>;
   movePin: (id: string, delta: number) => void | Promise<void>;
-  showPinnedSection: boolean;
   onLoadingChange: (loading: boolean) => void;
 };
 
@@ -186,7 +181,6 @@ function SearchSection({
   addPin,
   removePin,
   movePin,
-  showPinnedSection,
   onLoadingChange,
 }: SearchSectionProps) {
   const [q, setQ] = useState("");
@@ -200,8 +194,7 @@ function SearchSection({
   } = useCachedPromise(
     async (query: string, creator: string) => {
       const client = sb();
-      const selectColumns = `id,name,slug,creator_name,creator_slug,aa_intelligence_index,aa_coding_index,aa_math_index,mmlu_pro,gpqa,livecodebench,scicode,math_500,aime,hle,median_output_tokens_per_second,median_time_to_first_token_seconds,price_1m_input_tokens,price_1m_output_tokens,price_1m_blended_3_to_1,pricing,evaluations,first_seen,last_seen`;
-      let base = client.from("aa_models").select(selectColumns).limit(100);
+      let base = client.from("aa_models").select(MODEL_FULL_COLUMNS).limit(100);
       if (query) {
         base = base.or(`name.ilike.*${query}*,slug.ilike.*${query}*,creator_name.ilike.*${query}*`);
       }
@@ -218,11 +211,9 @@ function SearchSection({
   );
 
   useEffect(() => {
-    onLoadingChange(isLoading);
-  }, [isLoading, onLoadingChange]);
-
-  // (removed unused selectColumns; columns are defined in useCachedPromise)
-
+    onLoadingChange(isLoading && rows.length === 0);
+  }, [isLoading, rows, onLoadingChange]);
+  // forward loading state handled above; debounce keeps transitions smooth
   // initialize debounced search
   useEffect(() => {
     setQ(searchText);
@@ -231,22 +222,33 @@ function SearchSection({
   // React to parent search text or creator filter changes
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
-    setQ(searchText);
     debounce.current = setTimeout(() => setQ(searchText), 250);
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
   }, [searchText]);
 
-  const pinnedRows = rows
-    .filter((r) => pinnedIds.includes(r.id))
-    .sort((a, b) => pinnedIds.indexOf(a.id) - pinnedIds.indexOf(b.id));
-  const listRows = rows.filter((r) => !pinnedIds.includes(r.id));
+  const { pinned: pinnedRows, unpinned: listRows } = splitPinned(rows, pinnedIds);
   const updatedLabel = rows.length > 0 && rows[0]?.last_seen ? `Updated ${timeAgo(rows[0].last_seen)}` : undefined;
+
+  const showSearchSkeleton = isLoading && rows.length === 0;
 
   return (
     <>
-      {isLoading && rows.length === 0 ? <List.EmptyView title="Loading…" /> : null}
+      {/* Loading state handled by parent List's isLoading spinner to avoid empty-state flicker */}
+      {showSearchSkeleton && (
+        <List.Section title="Loading…">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <List.Item
+              key={`search-skeleton-${i}`}
+              title="Loading…"
+              subtitle=""
+              accessories={[{ tag: { value: "…", color: Color.SecondaryText } }]}
+              icon={Icon.Circle}
+            />
+          ))}
+        </List.Section>
+      )}
       {(creatorFilter || q) && (
         <List.Section title="Filters">
           <List.Item
@@ -273,7 +275,7 @@ function SearchSection({
       {!isLoading && rows.length === 0 ? (
         <List.EmptyView title="No models found" description="Try another search term" />
       ) : null}
-      {showPinnedSection && pinnedRows.length > 0 && (
+      {pinnedRows.length > 0 && (
         <List.Section title="Pinned">
           {pinnedRows.map((m) => {
             const accessories = accessoriesForModel(m, true);
@@ -290,10 +292,23 @@ function SearchSection({
                       icon={Icon.Sidebar}
                       target={<ModelDetail model={m} pinnedIds={pinnedIds} addPin={addPin} removePin={removePin} />}
                     />
-                    <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => removePin(m.id)} />
+                    <Action
+                      title="Unpin Model"
+                      icon={Icon.PinDisabled}
+                      shortcut={{ modifiers: ["opt"], key: "enter" }}
+                      onAction={async () => {
+                        await removePin(m.id);
+                        await showToast({ style: Toast.Style.Success, title: "Unpinned Model" });
+                      }}
+                    />
                     <Action title="Move Pin up" icon={Icon.ArrowUp} onAction={() => movePin(m.id, -1)} />
                     <Action title="Move Pin Down" icon={Icon.ArrowDown} onAction={() => movePin(m.id, 1)} />
-                    <Action title="Switch to Leaderboards" icon={Icon.List} onAction={() => setMode("leaderboards")} />
+                    <Action
+                      title="Switch to Leaderboards"
+                      icon={Icon.List}
+                      shortcut={{ modifiers: ["cmd"], key: "l" }}
+                      onAction={() => setMode("leaderboards")}
+                    />
                     <ActionPanel.Submenu title="Filter by Creator" shortcut={{ modifiers: ["cmd"], key: "p" }}>
                       <Action title="All Creators" onAction={() => setCreatorFilter("")} />
                       {[...new Set(rows.map((r) => r.creator_name).filter(Boolean) as string[])].map((name) => (
@@ -337,7 +352,12 @@ function SearchSection({
                     icon={Icon.Sidebar}
                     target={<ModelDetail model={m} pinnedIds={pinnedIds} addPin={addPin} removePin={removePin} />}
                   />
-                  <Action title="Switch to Leaderboards" icon={Icon.List} onAction={() => setMode("leaderboards")} />
+                  <Action
+                    title="Switch to Leaderboards"
+                    icon={Icon.List}
+                    shortcut={{ modifiers: ["cmd"], key: "l" }}
+                    onAction={() => setMode("leaderboards")}
+                  />
                   <ActionPanel.Submenu
                     title="Filter by Creator"
                     icon={Icon.Person}
@@ -360,9 +380,25 @@ function SearchSection({
                     }}
                   />
                   {isPinned ? (
-                    <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => removePin(m.id)} />
+                    <Action
+                      title="Unpin Model"
+                      icon={Icon.PinDisabled}
+                      shortcut={{ modifiers: ["opt"], key: "enter" }}
+                      onAction={async () => {
+                        await removePin(m.id);
+                        await showToast({ style: Toast.Style.Success, title: "Unpinned Model" });
+                      }}
+                    />
                   ) : (
-                    <Action title="Pin Model" icon={Icon.Pin} onAction={() => addPin(m.id)} />
+                    <Action
+                      title="Pin Model"
+                      icon={Icon.Pin}
+                      shortcut={{ modifiers: ["opt"], key: "enter" }}
+                      onAction={async () => {
+                        await addPin(m.id);
+                        await showToast({ style: Toast.Style.Success, title: "Pinned Model" });
+                      }}
+                    />
                   )}
                   {isPinned && (
                     <>
@@ -387,9 +423,20 @@ type LeaderboardSectionProps = {
   setMode: (m: Mode) => void;
   setMetric: (m: MetricKey) => void;
   onLoadingChange: (loading: boolean) => void;
+  pinnedIds: string[];
+  addPin: (id: string) => void | Promise<void>;
+  removePin: (id: string) => void | Promise<void>;
 };
 
-function LeaderboardSection({ metric, setMode, setMetric, onLoadingChange }: LeaderboardSectionProps) {
+function LeaderboardSection({
+  metric,
+  setMode,
+  setMetric,
+  onLoadingChange,
+  pinnedIds,
+  addPin,
+  removePin,
+}: LeaderboardSectionProps) {
   const isAsc = useMemo(() => METRIC_ASC[metric], [metric]);
 
   const {
@@ -404,67 +451,158 @@ function LeaderboardSection({ metric, setMode, setMetric, onLoadingChange }: Lea
         .from("aa_models")
         .select(columns)
         .not(m, "is", null)
+        .gt(m, 0)
         .order(m, { ascending: METRIC_ASC[m] })
         .limit(50);
       if (error) throw error;
       return (data ?? []) as unknown as Model[];
     },
     [metric],
-    { keepPreviousData: true },
+    { keepPreviousData: false },
   );
 
   useEffect(() => {
-    onLoadingChange(isLoading);
-  }, [isLoading, onLoadingChange]);
+    onLoadingChange(isLoading && rows.length === 0);
+  }, [isLoading, rows, onLoadingChange]);
+
+  // Universal pinned models: fetch by IDs via shared hook so pins appear regardless of leaderboard slice
+  const { pinnedModels, isLoading: pinnedLoading } = usePinnedModelsData(`id,name,slug,creator_name,${metric}`);
+
+  // helper to render a leaderboard row with actions and tags
+  const renderItem = (r: Model) => {
+    const accessories: List.Item.Accessory[] = [];
+    const isPinned = pinnedIds.includes(r.id);
+    if (isPinned) accessories.push({ tag: { value: "Pinned", color: Color.Purple } });
+    const value = (r as unknown as Record<string, number | null>)[metric];
+    if (value != null && value !== 0) {
+      accessories.push({ tag: { value: formatMetricValue(metric, value), color: colorForMetric(metric) } });
+    } else {
+      accessories.push({ tag: { value: "N/A", color: Color.SecondaryText } });
+    }
+    return (
+      <List.Item
+        key={r.id}
+        title={r.name ?? r.slug ?? "Model"}
+        subtitle={r.creator_name ?? ""}
+        accessories={accessories}
+        actions={
+          <ActionPanel>
+            <Action.Push
+              title="Open Details"
+              icon={Icon.Sidebar}
+              target={
+                <ModelDetail
+                  model={r as unknown as Model}
+                  pinnedIds={pinnedIds}
+                  addPin={addPin}
+                  removePin={removePin}
+                />
+              }
+            />
+            <Action
+              title={isPinned ? "Unpin Model" : "Pin Model"}
+              icon={isPinned ? Icon.PinDisabled : Icon.Pin}
+              shortcut={{ modifiers: ["opt"], key: "enter" }}
+              onAction={async () => {
+                if (isPinned) {
+                  await removePin(r.id);
+                  await showToast({ style: Toast.Style.Success, title: "Unpinned Model" });
+                } else {
+                  await addPin(r.id);
+                  await showToast({ style: Toast.Style.Success, title: "Pinned Model" });
+                }
+              }}
+            />
+            <Action
+              title="Switch to Search"
+              icon={Icon.MagnifyingGlass}
+              shortcut={{ modifiers: ["cmd"], key: "l" }}
+              onAction={() => setMode("search")}
+            />
+            <ActionPanel.Submenu
+              title="Change Leaderboard…"
+              icon={Icon.List}
+              shortcut={{ modifiers: ["cmd"], key: "p" }}
+            >
+              <ActionPanel.Section title="Pick Leaderboard Metric">
+                {METRICS.map((opt) => (
+                  <Action
+                    key={opt.key}
+                    title={opt.label}
+                    icon={Icon.Dot}
+                    onAction={() => setMetric(opt.key as MetricKey)}
+                  />
+                ))}
+              </ActionPanel.Section>
+            </ActionPanel.Submenu>
+            <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void revalidate()} />
+          </ActionPanel>
+        }
+      />
+    );
+  };
+
+  // Merge immediate pinned from current leaderboard slice (no fetch delay) with fetched pinned records
+  const pinnedFromSlice = rows.filter((r) => {
+    const v = (r as unknown as Record<string, number | null>)[metric];
+    return v != null && v !== 0 && pinnedIds.includes(r.id);
+  });
+  const mergedPinned = new Map<string, Model>();
+  pinnedFromSlice.forEach((m) => mergedPinned.set(m.id, m as unknown as Model));
+  pinnedModels.forEach((m) => {
+    const v = (m as unknown as Record<string, number | null>)[metric];
+    if (v != null && v !== 0 && pinnedIds.includes(m.id) && !mergedPinned.has(m.id)) {
+      mergedPinned.set(m.id, m as unknown as Model);
+    }
+  });
+  const pinnedRows = Array.from(mergedPinned.values()).sort((a, b) => {
+    const av = (a as unknown as Record<string, number | null>)[metric] ?? 0;
+    const bv = (b as unknown as Record<string, number | null>)[metric] ?? 0;
+    return METRIC_ASC[metric] ? av - bv : bv - av;
+  });
+  // Filter main rows for current metric to avoid flashing in 'no data' entries while new metric loads
+  const rowsForMetric = rows.filter((r) => {
+    const v = (r as unknown as Record<string, number | null>)[metric];
+    return v != null && v !== 0;
+  });
+  const { unpinned: listRows } = splitPinned(rowsForMetric, pinnedIds);
+  const showSkeleton = isLoading && rowsForMetric.length === 0 && pinnedRows.length === 0;
+  const showPinnedSkeleton = pinnedLoading && pinnedRows.length === 0 && pinnedIds.length > 0;
 
   return (
     <>
-      {isLoading && rows.length === 0 ? <List.EmptyView title="Loading…" /> : null}
-      <List.Section title={`Top by ${metric}`} subtitle={isAsc ? "ascending" : "descending"}>
-        {rows.map((r) => {
-          const accessories: List.Item.Accessory[] = [];
-          const value = (r as unknown as Record<string, number | null>)[metric];
-          if (value != null && value !== 0) {
-            accessories.push({ tag: { value: formatMetricValue(metric, value), color: colorForMetric(metric) } });
-          } else {
-            accessories.push({ tag: { value: "N/A", color: Color.SecondaryText } });
-          }
-          return (
+      {/* Loading state handled by parent List's isLoading spinner to avoid empty-state flicker */}
+      {showSkeleton && (
+        <List.Section title="Loading…">
+          {Array.from({ length: 6 }).map((_, i) => (
             <List.Item
-              key={r.id}
-              title={r.name ?? r.slug ?? "Model"}
-              subtitle={r.creator_name ?? ""}
-              accessories={accessories}
-              actions={
-                <ActionPanel>
-                  <Action.Push
-                    title="Open Details"
-                    icon={Icon.Sidebar}
-                    target={<ModelDetail model={r as unknown as Model} />}
-                  />
-                  <Action title="Switch to Search" icon={Icon.MagnifyingGlass} onAction={() => setMode("search")} />
-                  <ActionPanel.Submenu
-                    title="Change Leaderboard…"
-                    icon={Icon.List}
-                    shortcut={{ modifiers: ["cmd"], key: "k" }}
-                  >
-                    <ActionPanel.Section title="Pick Leaderboard Metric">
-                      {METRICS.map((opt) => (
-                        <Action
-                          key={opt.key}
-                          title={opt.label}
-                          icon={Icon.Dot}
-                          onAction={() => setMetric(opt.key as MetricKey)}
-                        />
-                      ))}
-                    </ActionPanel.Section>
-                  </ActionPanel.Submenu>
-                  <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={() => void revalidate()} />
-                </ActionPanel>
-              }
+              key={`skeleton-${i}`}
+              title="Loading…"
+              subtitle=""
+              accessories={[{ tag: { value: "…", color: Color.SecondaryText } }]}
+              icon={Icon.Circle}
             />
-          );
-        })}
+          ))}
+        </List.Section>
+      )}
+      {showPinnedSkeleton && (
+        <List.Section title="Pinned">
+          {Array.from({ length: Math.min(6, pinnedIds.length) }).map((_, i) => (
+            <List.Item
+              key={`pinned-skeleton-${i}`}
+              title="Loading…"
+              subtitle=""
+              accessories={[{ tag: { value: "…", color: Color.SecondaryText } }]}
+              icon={Icon.Circle}
+            />
+          ))}
+        </List.Section>
+      )}
+      {pinnedRows.length > 0 && (
+        <List.Section title="Pinned">{pinnedRows.map((r) => renderItem(r as unknown as Model))}</List.Section>
+      )}
+      <List.Section title={`Top by ${metric}`} subtitle={isAsc ? "ascending" : "descending"}>
+        {listRows.map((r) => renderItem(r as unknown as Model))}
       </List.Section>
     </>
   );
@@ -611,27 +749,68 @@ type ModelDetailProps = {
 };
 
 function ModelDetail({ model, pinnedIds, addPin, removePin }: ModelDetailProps) {
-  const md = modelMarkdown(model);
-  const isPinned = pinnedIds?.includes(model.id) ?? false;
+  // Always fetch full model when detail opens (leaderboard rows only have a subset of columns)
+  const { data: fullRows = [] } = useCachedPromise(
+    async (id: string) => {
+      const client = sb();
+      const { data, error } = await client.from("aa_models").select(MODEL_FULL_COLUMNS).eq("id", id).limit(1);
+      if (error) throw error;
+      return (data ?? []) as unknown as Model[];
+    },
+    [model.id],
+    { keepPreviousData: true },
+  );
+  const displayModel = (fullRows?.[0] as Model) ?? model;
+  const md = modelMarkdown(displayModel);
+  // Subscribe to local storage so Detail reacts immediately to pin/unpin changes
+  const { value: lsPinnedIds = [], setValue: setLsPinnedIds } = useLocalStorage<string[]>("ai-stats-pinned-ids", []);
+  const isPinnedExternal = pinnedIds?.includes(displayModel.id) ?? false;
+  const isPinned = (lsPinnedIds ?? []).includes(displayModel.id) || isPinnedExternal;
+  const { pop } = useNavigation();
+  const { AFTER_PIN_BEHAVIOR = "return_to_list" } = getPreferenceValues<{
+    AFTER_PIN_BEHAVIOR?: "return_to_list" | "stay_on_detail";
+  }>();
+
+  const togglePin = async () => {
+    const current = (lsPinnedIds ?? []).filter(Boolean);
+    if (isPinned) {
+      // Unpin
+      if (removePin) await removePin(displayModel.id);
+      else await setLsPinnedIds(current.filter((id) => id !== displayModel.id));
+      await showToast({ style: Toast.Style.Success, title: "Unpinned Model" });
+    } else {
+      // Pin (keep max 10, de-duped)
+      const next = [displayModel.id, ...current.filter((id) => id !== displayModel.id)].slice(0, 10);
+      if (addPin) await addPin(displayModel.id);
+      else await setLsPinnedIds(next);
+      await showToast({ style: Toast.Style.Success, title: "Pinned Model" });
+    }
+    // After toggling, optionally return to the list view per preference
+    if (AFTER_PIN_BEHAVIOR === "return_to_list") {
+      try {
+        pop();
+      } catch {
+        // no-op if navigation stack cannot pop
+      }
+    }
+  };
   return (
     <Detail
       markdown={md}
       actions={
         <ActionPanel>
-          {addPin &&
-            removePin &&
-            (isPinned ? (
-              <Action title="Unpin Model" icon={Icon.PinDisabled} onAction={() => removePin(model.id)} />
-            ) : (
-              <Action title="Pin Model" icon={Icon.Pin} onAction={() => addPin(model.id)} />
-            ))}
+          <Action
+            title={isPinned ? "Unpin Model" : "Pin Model"}
+            icon={isPinned ? Icon.PinDisabled : Icon.Pin}
+            onAction={() => void togglePin()}
+          />
           <ActionPanel.Submenu title="Copy Info" icon={Icon.Clipboard}>
             {(() => {
-              const name = model.name ?? model.slug ?? "Model";
-              const overviewText = `Name: ${na(model.name ?? model.slug)}\nSlug: ${na(model.slug)}\nCreator: ${na(model.creator_name)} (${na(model.creator_slug)})\nFirst Seen: ${na(model.first_seen)}\nLast Seen: ${na(model.last_seen)} (${timeAgo(model.last_seen)})`;
-              const pricingText = `Input (1M): ${!isMissing(model.price_1m_input_tokens) ? formatPrice(model.price_1m_input_tokens as number) : "N/A"}\nOutput (1M): ${!isMissing(model.price_1m_output_tokens) ? formatPrice(model.price_1m_output_tokens as number) : "N/A"}\nBlended 3:1 (1M): ${!isMissing(model.price_1m_blended_3_to_1) ? formatPrice(model.price_1m_blended_3_to_1 as number) : "N/A"}`;
-              const throughputText = `Median Tokens/sec: ${!isMissing(model.median_output_tokens_per_second) ? String(model.median_output_tokens_per_second) : "N/A"}\nMedian TTFT (s): ${!isMissing(model.median_time_to_first_token_seconds) ? String(model.median_time_to_first_token_seconds) : "N/A"}`;
-              const benchmarksText = `Intelligence Index: ${na(model.aa_intelligence_index)}\nCoding Index: ${na(model.aa_coding_index)}\nMath Index: ${na(model.aa_math_index)}\nMMLU Pro: ${na(model.mmlu_pro)}\nGPQA: ${na(model.gpqa)}\nLiveCodeBench: ${na(model.livecodebench)}\nSciCode: ${na(model.scicode)}\nMath 500: ${na(model.math_500)}\nAIME: ${na(model.aime)}\nHLE: ${na(model.hle)}`;
+              const name = displayModel.name ?? displayModel.slug ?? "Model";
+              const overviewText = `Name: ${na(displayModel.name ?? displayModel.slug)}\nSlug: ${na(displayModel.slug)}\nCreator: ${na(displayModel.creator_name)} (${na(displayModel.creator_slug)})\nFirst Seen: ${na(displayModel.first_seen)}\nLast Seen: ${na(displayModel.last_seen)} (${timeAgo(displayModel.last_seen)})`;
+              const pricingText = `Input (1M): ${!isMissing(displayModel.price_1m_input_tokens) ? formatPrice(displayModel.price_1m_input_tokens as number) : "N/A"}\nOutput (1M): ${!isMissing(displayModel.price_1m_output_tokens) ? formatPrice(displayModel.price_1m_output_tokens as number) : "N/A"}\nBlended 3:1 (1M): ${!isMissing(displayModel.price_1m_blended_3_to_1) ? formatPrice(displayModel.price_1m_blended_3_to_1 as number) : "N/A"}`;
+              const throughputText = `Median Tokens/sec: ${!isMissing(displayModel.median_output_tokens_per_second) ? String(displayModel.median_output_tokens_per_second) : "N/A"}\nMedian TTFT (s): ${!isMissing(displayModel.median_time_to_first_token_seconds) ? String(displayModel.median_time_to_first_token_seconds) : "N/A"}`;
+              const benchmarksText = `Intelligence Index: ${na(displayModel.aa_intelligence_index)}\nCoding Index: ${na(displayModel.aa_coding_index)}\nMath Index: ${na(displayModel.aa_math_index)}\nMMLU Pro: ${na(displayModel.mmlu_pro)}\nGPQA: ${na(displayModel.gpqa)}\nLiveCodeBench: ${na(displayModel.livecodebench)}\nSciCode: ${na(displayModel.scicode)}\nMath 500: ${na(displayModel.math_500)}\nAIME: ${na(displayModel.aime)}\nHLE: ${na(displayModel.hle)}`;
               const fullText = `${name}\n\nOverview\n${overviewText}\n\nPricing\n${pricingText}\n\nThroughput & Latency\n${throughputText}\n\nBenchmarks\n${benchmarksText}`;
               return (
                 <>
@@ -661,7 +840,7 @@ function formatPrice(n: number) {
 
 function accessoriesForModel(m: Model, isPinned: boolean): List.Item.Accessory[] {
   const acc: List.Item.Accessory[] = [];
-  if (isPinned) acc.push({ tag: { value: "Pinned", color: Color.Yellow } });
+  if (isPinned) acc.push({ tag: { value: "Pinned", color: Color.Purple } });
 
   if (m.price_1m_input_tokens != null && m.price_1m_input_tokens !== 0) {
     acc.push({ tag: { value: `${formatPrice(m.price_1m_input_tokens)}/1M in`, color: Color.Orange } });

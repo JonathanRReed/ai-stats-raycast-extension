@@ -24,15 +24,6 @@
   ],
   "preferences": [
     {
-      "name": "SHOW_PINNED_SECTION",
-      "type": "checkbox",
-      "title": "Show Pinned Section",
-      "label": "Show Pinned Section",
-      "required": false,
-      "default": true,
-      "description": "If enabled, shows the Pinned section at the top of Search"
-    },
-    {
       "name": "SUPABASE_URL",
       "type": "textfield",
       "title": "Supabase URL (optional)",
@@ -48,6 +39,18 @@
       "required": false,
       "default": "sb_publishable_i_viL-n7Gd7C9ijmmHtj5g_BgLbFmuf",
       "description": "Optional override for the read-only anon key. Leave empty to use the default."
+    },
+    {
+      "name": "AFTER_PIN_BEHAVIOR",
+      "type": "dropdown",
+      "title": "After Pin/Unpin",
+      "required": false,
+      "default": "return_to_list",
+      "description": "Choose what happens after pinning/unpinning in the detail view.",
+      "data": [
+        { "title": "Return to List", "value": "return_to_list" },
+        { "title": "Stay on Detail", "value": "stay_on_detail" }
+      ]
     }
   ],
   "dependencies": {

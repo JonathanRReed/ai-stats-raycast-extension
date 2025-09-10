@@ -13,9 +13,10 @@ Search models, view benchmark results, compare prices, and check leaderboards al
 ## Usage
 
 - Command: `View AI Stats`
+- Switch Views (Search ↔ Leaderboards): Cmd+L
 - Creator Filter: Cmd+P
 - Reset Filters: Cmd+Backspace
-- Pinned Models: Pin/Unpin from list or detail; Move Up/Down; optional Pinned section (enabled by default) in preferences.
+- Pinned Models: Pin/Unpin from list or detail (Option+Enter); Move Up/Down
 
 ## Commands
 
@@ -24,17 +25,18 @@ Search models, view benchmark results, compare prices, and check leaderboards al
 ## Action Menu (Quick Reference)
 
 - Search
-  - Switch to Leaderboards
+  - Switch to Leaderboards (Cmd+L)
   - Filter by Creator… (Cmd+P)
   - Reset Filters (Cmd+Backspace)
-  - Pin / Unpin / Move Pin Up / Move Pin Down
+  - Pin / Unpin (Option+Enter) / Move Pin Up / Move Pin Down
   - Open Details (Enter)
   - Refresh
 
 - Leaderboards
   - Open Details (Enter)
-  - Switch to Search
-  - Change Leaderboard… (Cmd+K)
+  - Switch to Search (Cmd+L)
+  - Change Leaderboard… (Cmd+P)
+  - Pin / Unpin (Option+Enter)
   - Refresh
 
 ## Features
@@ -44,7 +46,8 @@ Search models, view benchmark results, compare prices, and check leaderboards al
 - 🚀 **Throughput** Median tokens/sec and TTFT, with clear color cues.
 - 🏆 **Leaderboards** Rank by MMLU, GPQA, TPS, TTFT, prices, and more.
 - 📄 **Model Detail Pages** “About” pages with overview, pricing, throughput, benchmarks, and raw JSON.
-- 📌 **Pin a Model** Pin up to 10 models and have them at the top of the list when the extension launches.
+- 📌 **Pin a Model** Pin up to 10 models from Search, Leaderboards, and Detail. Universal pins update instantly.
+- 📶 **Smooth Loading** Skeleton placeholders and a centralized spinner avoid flicker during fetches.
 
 ## Setup
 
@@ -58,7 +61,6 @@ You can optionally override the default read-only Supabase project via Raycast P
 
 - `SUPABASE_URL` (textfield) – e.g., `https://YOUR-PROJECT.supabase.co`
 - `SUPABASE_ANON_KEY` (password) – your project's publishable anon key
-- `SHOW_PINNED_SECTION` (checkbox) – show a Pinned section at the top of Search (default: enabled)
 
 If left empty, the extension uses a hosted, read-only Supabase instance to fetch public AI stats.
 
