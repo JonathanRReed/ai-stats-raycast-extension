@@ -86,7 +86,8 @@ If left empty, the extension uses a hosted, read-only Supabase instance to fetch
 
 ## License
 
-MIT License
+MIT License. Third-party data and trademarks are excluded. See
+[`LICENSE`](./LICENSE) and [`NOTICE.md`](./NOTICE.md).
 
 ## Disclaimer
 
